@@ -22,15 +22,18 @@ pub type MoveEntry {
     prefix: String,
     text: String,
     is_current: Bool,
+    is_analyzing: Bool,
     classification: Option(MoveClassification),
   )
 }
 
 /// Format the game's moves as a list of entries with current-move highlighting.
 /// When analysis is provided, each entry includes a move classification.
+/// When deep_analysis_index is set, the move at that position is marked.
 pub fn format_move_list(
   game: Game,
   analysis: Option(GameAnalysis),
+  deep_analysis_index: Option(Int),
 ) -> List(MoveEntry) {
   let moves = game.moves
   let positions = game.positions
@@ -42,6 +45,7 @@ pub fn format_move_list(
     let is_current = i + 1 == cursor
     let move_number = i / 2 + 1
     let is_white_move = i % 2 == 0
+    let is_analyzing = deep_analysis_index == option.Some(i)
 
     let prefix = case is_white_move {
       True -> int.to_string(move_number) <> ". "
@@ -52,6 +56,7 @@ pub fn format_move_list(
       prefix: prefix,
       text: san_text,
       is_current: is_current,
+      is_analyzing: is_analyzing,
       classification: classification,
     )
   })
@@ -77,9 +82,11 @@ pub type MoveLine {
     prefix: String,
     white_text: String,
     white_current: Bool,
+    white_analyzing: Bool,
     white_classification: Option(MoveClassification),
     black_text: String,
     black_current: Bool,
+    black_analyzing: Bool,
     black_classification: Option(MoveClassification),
   )
 }
@@ -88,8 +95,9 @@ pub type MoveLine {
 pub fn format_move_lines(
   game: Game,
   analysis: Option(GameAnalysis),
+  deep_analysis_index: Option(Int),
 ) -> List(MoveLine) {
-  let entries = format_move_list(game, analysis)
+  let entries = format_move_list(game, analysis, deep_analysis_index)
   format_pairs(entries, [])
 }
 
@@ -105,8 +113,10 @@ fn format_pairs(
           white.prefix,
           white.text,
           white.is_current,
+          white.is_analyzing,
           white.classification,
           "",
+          False,
           False,
           option.None,
         ),
@@ -119,9 +129,11 @@ fn format_pairs(
           white.prefix,
           white.text,
           white.is_current,
+          white.is_analyzing,
           white.classification,
           black.text,
           black.is_current,
+          black.is_analyzing,
           black.classification,
         )
       format_pairs(rest, [line, ..acc])
@@ -137,8 +149,9 @@ pub fn render(
   start_row: Int,
   max_height: Int,
   analysis: Option(GameAnalysis),
+  deep_analysis_index: Option(Int),
 ) -> List(command.Command) {
-  render_moves(game, start_col, start_row, max_height, analysis)
+  render_moves(game, start_col, start_row, max_height, analysis, deep_analysis_index)
 }
 
 fn render_moves(
@@ -147,8 +160,9 @@ fn render_moves(
   start_row: Int,
   max_lines: Int,
   analysis: Option(GameAnalysis),
+  deep_analysis_index: Option(Int),
 ) -> List(command.Command) {
-  let lines = format_move_lines(game, analysis)
+  let lines = format_move_lines(game, analysis, deep_analysis_index)
   let visible = scroll_window(lines, max_lines)
   list.index_map(visible, fn(line, i) {
     let is_current = line.white_current || line.black_current
@@ -161,9 +175,9 @@ fn render_moves(
     list.flatten([
       [command.MoveTo(start_col, start_row + i), command.ResetStyle],
       [command.Print(prefix <> line.prefix)],
-      render_half(line.white_text, line.white_current, line.white_classification),
+      render_half(line.white_text, line.white_current, line.white_analyzing, line.white_classification),
       [command.Print(white_pad)],
-      render_half(line.black_text, line.black_current, line.black_classification),
+      render_half(line.black_text, line.black_current, line.black_analyzing, line.black_classification),
       [command.ResetStyle, command.Clear(terminal.UntilNewLine)],
     ])
   })
@@ -173,6 +187,7 @@ fn render_moves(
 fn render_half(
   text: String,
   is_current: Bool,
+  is_analyzing: Bool,
   classification: Option(MoveClassification),
 ) -> List(command.Command) {
   let color_cmds = case classification {
@@ -195,10 +210,14 @@ fn render_half(
     True -> [command.SetAttributes([style.Bold, style.Underline])]
     False -> []
   }
+  let suffix = case is_analyzing {
+    True -> "\u{1F41F}"
+    False -> ""
+  }
   list.flatten([
     color_cmds,
     style_cmds,
-    [command.Print(text)],
+    [command.Print(text <> suffix)],
     [command.ResetStyle],
   ])
 }

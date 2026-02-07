@@ -1,4 +1,5 @@
 import { toList } from "../../gleam.mjs";
+import { Some, None } from "../../../gleam_stdlib/gleam/option.mjs";
 
 class StockfishEngine {
   constructor(proc) {
@@ -106,6 +107,28 @@ export async function evaluate_incremental(engine, position_cmd, depth) {
   );
 
   return toList(lines);
+}
+
+export function start_evaluation(engine, position_cmd, depth) {
+  engine.lines = [];
+  engine._evalDone = false;
+  engine._evalResult = undefined;
+  engine._send(position_cmd);
+  engine._send("go depth " + depth);
+  engine._waitFor((line) => line.startsWith("bestmove")).then((lines) => {
+    engine._evalResult = toList(lines);
+    engine._evalDone = true;
+  });
+}
+
+export function poll_result(engine) {
+  if (engine._evalDone) {
+    const result = engine._evalResult;
+    engine._evalDone = false;
+    engine._evalResult = undefined;
+    return new Some(result);
+  }
+  return new None();
 }
 
 export function stop(engine) {

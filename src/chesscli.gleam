@@ -77,7 +77,7 @@ fn render_board(state: AppState) -> Nil {
   let black_name = option.from_result(dict.get(state.game.tags, "Black"))
   let captures_commands =
     captures_view.render(pos.board, state.from_white, 0, 12, 4, white_name, black_name)
-  let panel_commands = info_panel.render(state.game, 31, 1, 10, state.analysis)
+  let panel_commands = info_panel.render(state.game, 31, 1, 10, state.analysis, state.deep_analysis_index)
   let eval_commands = render_eval_bar(state)
   let status_commands = status_bar.render(state, 13)
 
@@ -105,11 +105,11 @@ fn render_browser(state: AppState) -> Nil {
 }
 
 fn loop(state: AppState, engine: Option(stockfish.EngineProcess)) {
-  // During deep analysis, poll non-blockingly so we can interleave
-  // user input processing with evaluation steps
+  // During deep analysis, poll with short timeout so we can interleave
+  // user input processing with evaluation progress checks
   case state.deep_analysis_index {
     Some(_) -> {
-      use evt <- promise.await(event.poll(0))
+      use evt <- promise.await(event.poll(50))
       case evt {
         Some(Ok(Key(k))) -> handle_input(state, k.code, engine)
         Some(Ok(event.Resize(_, _))) -> {
@@ -118,8 +118,15 @@ fn loop(state: AppState, engine: Option(stockfish.EngineProcess)) {
           loop(state, engine)
         }
         _ -> {
-          // No user input pending — continue deep analysis
-          handle_effect(state, app.ContinueDeepAnalysis, engine)
+          // No user input — check if a pending evaluation has completed
+          case engine {
+            Some(eng) ->
+              case stockfish.poll_result(eng) {
+                Some(lines) -> on_deep_eval_done(state, lines, eng)
+                option.None -> loop(state, engine)
+              }
+            option.None -> loop(state, engine)
+          }
         }
       }
     }
@@ -258,29 +265,16 @@ fn handle_effect(
               loop(done_state, None)
             }
             False -> {
-              // Evaluate one position at depth 18, then return to loop
-              // so user input is processed promptly between evaluations
+              // Start non-blocking evaluation — returns immediately
               let start_fen = fen.to_string(starting_position(state.game))
               let move_ucis = list.map(state.game.moves, move.to_uci)
               let moves_prefix = list.take(move_ucis, idx)
               let position_cmd =
                 uci.format_position_with_moves(start_fen, moves_prefix)
-              use lines <- promise.await(
-                stockfish.evaluate_incremental(eng, position_cmd, 18),
-              )
-              let #(raw_eval, best) = parse_engine_output(lines)
-              let assert Ok(pos) =
-                list.drop(state.game.positions, idx) |> list.first
-              let eval = case pos.active_color {
-                color.White -> raw_eval
-                color.Black -> uci.negate_score(raw_eval)
-              }
-              let #(new_state, _eff) =
-                app.on_deep_eval_update(state, idx, eval, best)
-              render(new_state)
-              // Return to loop — it checks deep_analysis_index and will
-              // process any pending user input before the next evaluation
-              loop(new_state, Some(eng))
+              stockfish.start_evaluation(eng, position_cmd, 18)
+              render(state)
+              // Return to loop — it polls for results between input checks
+              loop(state, Some(eng))
             }
           }
         }
@@ -303,6 +297,54 @@ fn handle_effect(
 fn starting_position(g: game.Game) -> Position {
   let assert [pos, ..] = g.positions
   pos
+}
+
+/// Process a completed deep evaluation result: update analysis, start next eval.
+fn on_deep_eval_done(
+  state: AppState,
+  lines: List(String),
+  eng: stockfish.EngineProcess,
+) {
+  let assert Some(idx) = state.deep_analysis_index
+  let #(raw_eval, best) = parse_engine_output(lines)
+  let assert Ok(pos) =
+    list.drop(state.game.positions, idx) |> list.first
+  let eval = case pos.active_color {
+    color.White -> raw_eval
+    color.Black -> uci.negate_score(raw_eval)
+  }
+  let #(new_state, _eff) = app.on_deep_eval_update(state, idx, eval, best)
+  // If more positions remain, start the next evaluation non-blockingly
+  case new_state.deep_analysis_index {
+    Some(next_idx) -> {
+      let total_positions = list.length(state.game.positions)
+      case next_idx >= total_positions {
+        True -> {
+          let done_state =
+            app.AppState(..new_state, deep_analysis_index: None)
+          stockfish.stop(eng)
+          render(done_state)
+          loop(done_state, None)
+        }
+        False -> {
+          let start_fen = fen.to_string(starting_position(state.game))
+          let move_ucis = list.map(state.game.moves, move.to_uci)
+          let moves_prefix = list.take(move_ucis, next_idx)
+          let position_cmd =
+            uci.format_position_with_moves(start_fen, moves_prefix)
+          stockfish.start_evaluation(eng, position_cmd, 18)
+          render(new_state)
+          loop(new_state, Some(eng))
+        }
+      }
+    }
+    None -> {
+      // Deep analysis complete
+      stockfish.stop(eng)
+      render(new_state)
+      loop(new_state, None)
+    }
+  }
 }
 
 /// Stop the engine if it's running.

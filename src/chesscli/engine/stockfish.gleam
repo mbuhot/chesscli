@@ -2,6 +2,7 @@
 //// Uses Bun.spawn via JavaScript interop — intentionally untested IO boundary.
 
 import gleam/javascript/promise.{type Promise}
+import gleam/option.{type Option}
 
 /// Opaque handle to a running Stockfish process.
 pub type EngineProcess
@@ -31,6 +32,20 @@ pub fn evaluate_incremental(
   position_cmd: String,
   depth: Int,
 ) -> Promise(List(String))
+
+/// Start a non-blocking evaluation. Returns immediately while Stockfish thinks.
+/// Use poll_result to check when the evaluation is done.
+@external(javascript, "./stockfish_ffi.mjs", "start_evaluation")
+pub fn start_evaluation(
+  engine: EngineProcess,
+  position_cmd: String,
+  depth: Int,
+) -> Nil
+
+/// Check if a non-blocking evaluation has completed.
+/// Returns Some(lines) if done, None if still thinking.
+@external(javascript, "./stockfish_ffi.mjs", "poll_result")
+pub fn poll_result(engine: EngineProcess) -> Option(List(String))
 
 /// Send "quit" and kill the Stockfish process.
 @external(javascript, "./stockfish_ffi.mjs", "stop")

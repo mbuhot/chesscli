@@ -336,7 +336,7 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
       let black_name = option.from_result(dict.get(state.game.tags, "Black"))
       let captures_commands =
         captures_view.render(pos.board, state.from_white, 0, 12, 4, white_name, black_name)
-      let panel_commands = info_panel.render(state.game, 31, 1, 10, state.analysis)
+      let panel_commands = info_panel.render(state.game, 31, 1, 10, state.analysis, state.deep_analysis_index)
       let eval_commands = render_eval_bar(state)
       let status_commands = status_bar.render(state, 13)
       list.flatten([
