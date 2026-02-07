@@ -19,7 +19,7 @@ import chesscli/tui/info_panel
 import chesscli/tui/sound
 import chesscli/tui/status_bar
 import etch/command
-import etch/event.{Key}
+import etch/event.{type KeyCode, Key}
 import etch/stdout
 import etch/terminal
 import gleam/javascript/promise
@@ -105,24 +105,52 @@ fn render_browser(state: AppState) -> Nil {
 }
 
 fn loop(state: AppState, engine: Option(stockfish.EngineProcess)) {
-  use evt <- promise.await(event.read())
-  case evt {
-    Some(Ok(Key(k))) -> {
-      let #(new_state, effect) = app.update(state, k.code)
-      case effect {
-        app.Render -> flush_then_render(state, new_state, engine)
+  // During deep analysis, poll non-blockingly so we can interleave
+  // user input processing with evaluation steps
+  case state.deep_analysis_index {
+    Some(_) -> {
+      use evt <- promise.await(event.poll(0))
+      case evt {
+        Some(Ok(Key(k))) -> handle_input(state, k.code, engine)
+        Some(Ok(event.Resize(_, _))) -> {
+          stdout.execute([command.Clear(terminal.All)])
+          render(state)
+          loop(state, engine)
+        }
         _ -> {
-          apply_transition_effects(state, new_state)
-          handle_effect(new_state, effect, engine)
+          // No user input pending — continue deep analysis
+          handle_effect(state, app.ContinueDeepAnalysis, engine)
         }
       }
     }
-    Some(Ok(event.Resize(_, _))) -> {
-      stdout.execute([command.Clear(terminal.All)])
-      render(state)
-      loop(state, engine)
+    None -> {
+      use evt <- promise.await(event.read())
+      case evt {
+        Some(Ok(Key(k))) -> handle_input(state, k.code, engine)
+        Some(Ok(event.Resize(_, _))) -> {
+          stdout.execute([command.Clear(terminal.All)])
+          render(state)
+          loop(state, engine)
+        }
+        _ -> loop(state, engine)
+      }
     }
-    _ -> loop(state, engine)
+  }
+}
+
+/// Process a key event from the user.
+fn handle_input(
+  state: AppState,
+  key_code: KeyCode,
+  engine: Option(stockfish.EngineProcess),
+) {
+  let #(new_state, effect) = app.update(state, key_code)
+  case effect {
+    app.Render -> flush_then_render(state, new_state, engine)
+    _ -> {
+      apply_transition_effects(state, new_state)
+      handle_effect(new_state, effect, engine)
+    }
   }
 }
 
@@ -230,13 +258,13 @@ fn handle_effect(
               loop(done_state, None)
             }
             False -> {
-              // Evaluate this position at depth 18
+              // Evaluate one position at depth 18, then return to loop
+              // so user input is processed promptly between evaluations
               let start_fen = fen.to_string(starting_position(state.game))
               let move_ucis = list.map(state.game.moves, move.to_uci)
               let moves_prefix = list.take(move_ucis, idx)
               let position_cmd =
                 uci.format_position_with_moves(start_fen, moves_prefix)
-              use _ <- promise.await(stockfish.new_game(eng))
               use lines <- promise.await(
                 stockfish.evaluate_incremental(eng, position_cmd, 18),
               )
@@ -247,30 +275,16 @@ fn handle_effect(
                 color.White -> raw_eval
                 color.Black -> uci.negate_score(raw_eval)
               }
-              let #(new_state, eff) =
+              let #(new_state, _eff) =
                 app.on_deep_eval_update(state, idx, eval, best)
               render(new_state)
-              // Cooperative multitasking: check for user input
-              use evt <- promise.await(event.poll(0))
-              case evt {
-                Some(Ok(Key(k))) -> {
-                  let #(input_state, input_eff) = app.update(new_state, k.code)
-                  apply_transition_effects(new_state, input_state)
-                  case input_eff {
-                    app.Render -> {
-                      render(input_state)
-                      handle_effect(input_state, eff, Some(eng))
-                    }
-                    _ -> handle_effect(input_state, input_eff, Some(eng))
-                  }
-                }
-                _ -> handle_effect(new_state, eff, Some(eng))
-              }
+              // Return to loop — it checks deep_analysis_index and will
+              // process any pending user input before the next evaluation
+              loop(new_state, Some(eng))
             }
           }
         }
         _, _ -> {
-          // No deep analysis to continue or no engine
           render(state)
           loop(state, engine)
         }
