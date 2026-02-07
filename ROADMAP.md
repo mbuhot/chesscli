@@ -40,7 +40,7 @@ src/chesscli/
 | 3 | DONE | Interactive TUI (app state machine, highlights, panels, keybindings) |
 | 3.5 | DONE | Captured pieces & material advantage display |
 | 4 | DONE | Chess.com integration (API client, game browser) |
-| 5 | TODO | Stockfish analysis (UCI protocol, eval, blunder detection) |
+| 5 | DONE | Stockfish analysis (UCI protocol, eval, blunder detection) |
 | 6 | TODO | Puzzle generation & training from blunders |
 
 ---
