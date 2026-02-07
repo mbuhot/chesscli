@@ -17,7 +17,7 @@ pub fn format_move_list_one_move_test() {
   let g = game.from_pgn(pgn_game)
   let g = game.goto_end(g)
   let entries = info_panel.format_move_list(g)
-  assert entries == [MoveEntry(text: "1. e4", is_current: True)]
+  assert entries == [MoveEntry(prefix: "1. ", text: "e4", is_current: True)]
 }
 
 pub fn format_move_list_two_moves_test() {
@@ -27,8 +27,10 @@ pub fn format_move_list_two_moves_test() {
   let entries = info_panel.format_move_list(g)
   assert list.length(entries) == 2
   let assert [white, black] = entries
-  assert white.text == "1. e4"
+  assert white.prefix == "1. "
+  assert white.text == "e4"
   assert white.is_current == False
+  assert black.prefix == ""
   assert black.text == "e5"
   assert black.is_current == True
 }
@@ -50,7 +52,8 @@ pub fn format_move_list_cursor_after_first_move_test() {
   let entries = info_panel.format_move_list(g)
   let assert [first, ..] = entries
   assert first.is_current == True
-  assert first.text == "1. e4"
+  assert first.prefix == "1. "
+  assert first.text == "e4"
 }
 
 // --- format_move_lines ---
@@ -61,13 +64,13 @@ pub fn format_move_lines_pairs_test() {
   let g = game.goto_end(g)
   let lines = info_panel.format_move_lines(g)
   assert list.length(lines) == 2
-  let assert [#(line1, _), #(line2, _)] = lines
-  // Line 1 should contain "1. e4" and "e5"
-  assert { line1 |> contains("1. e4") } == True
-  assert { line1 |> contains("e5") } == True
-  // Line 2 should contain "2. Nf3" and "Nc6"
-  assert { line2 |> contains("2. Nf3") } == True
-  assert { line2 |> contains("Nc6") } == True
+  let assert [line1, line2] = lines
+  assert line1.prefix == "1. "
+  assert line1.white_text == "e4"
+  assert line1.black_text == "e5"
+  assert line2.prefix == "2. "
+  assert line2.white_text == "Nf3"
+  assert line2.black_text == "Nc6"
 }
 
 pub fn format_move_lines_odd_move_count_test() {
@@ -76,9 +79,10 @@ pub fn format_move_lines_odd_move_count_test() {
   let g = game.goto_end(g)
   let lines = info_panel.format_move_lines(g)
   assert list.length(lines) == 2
-  let assert [_, #(line2, _)] = lines
-  // Line 2 should contain "2. Nf3" but not a black move
-  assert { line2 |> contains("2. Nf3") } == True
+  let assert [_, line2] = lines
+  assert line2.prefix == "2. "
+  assert line2.white_text == "Nf3"
+  assert line2.black_text == ""
 }
 
 pub fn format_move_lines_current_line_highlighted_test() {
@@ -89,9 +93,11 @@ pub fn format_move_lines_current_line_highlighted_test() {
   let assert Ok(g) = game.forward(g)
   let assert Ok(g) = game.forward(g)
   let lines = info_panel.format_move_lines(g)
-  let assert [#(_, line1_current), #(_, line2_current)] = lines
-  assert line1_current == False
-  assert line2_current == True
+  let assert [line1, line2] = lines
+  assert line1.white_current == False
+  assert line1.black_current == False
+  assert line2.white_current == True
+  assert line2.black_current == False
 }
 
 // --- render ---
@@ -129,8 +135,3 @@ pub fn render_long_game_limits_output_test() {
   assert move_to_count <= 8
 }
 
-import gleam/string
-
-fn contains(haystack: String, needle: String) -> Bool {
-  string.contains(haystack, needle)
-}

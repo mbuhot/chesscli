@@ -6,6 +6,7 @@ import chesscli/chess/move_gen
 import chesscli/chess/pgn.{type PgnGame}
 import chesscli/chess/position.{type Position}
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 
 /// A navigable chess game with a full move/position history and a cursor
@@ -64,6 +65,13 @@ pub fn backward(game: Game) -> Result(Game, Nil) {
     True -> Ok(Game(..game, current_index: game.current_index - 1))
     False -> Error(Nil)
   }
+}
+
+/// Skip forward or backward by n moves, clamped to valid range.
+pub fn skip(game: Game, n: Int) -> Game {
+  let max = list.length(game.moves)
+  let target = int.clamp(game.current_index + n, 0, max)
+  Game(..game, current_index: target)
 }
 
 /// Jump to the start of the game.

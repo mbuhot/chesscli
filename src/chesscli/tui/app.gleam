@@ -131,6 +131,8 @@ fn update_game_replay(state: AppState, key: KeyCode) -> #(AppState, Effect) {
         Ok(g) -> #(AppState(..state, game: g), Render)
         Error(_) -> #(state, None)
       }
+    event.PageDown -> #(AppState(..state, game: game.skip(state.game, 20)), Render)
+    event.PageUp -> #(AppState(..state, game: game.skip(state.game, -20)), Render)
     event.Home -> #(AppState(..state, game: game.goto_start(state.game)), Render)
     event.End -> #(AppState(..state, game: game.goto_end(state.game)), Render)
     event.Char("f") -> #(AppState(..state, from_white: !state.from_white), Render)

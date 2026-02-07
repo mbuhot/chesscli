@@ -13,7 +13,7 @@ import gleam/string
 /// A formatted entry in the move list: the display text and whether it's
 /// the move at the current cursor position.
 pub type MoveEntry {
-  MoveEntry(text: String, is_current: Bool)
+  MoveEntry(prefix: String, text: String, is_current: Bool)
 }
 
 /// Format the game's moves as a list of entries with current-move highlighting.
@@ -30,36 +30,53 @@ pub fn format_move_list(game: Game) -> List(MoveEntry) {
     let move_number = i / 2 + 1
     let is_white_move = i % 2 == 0
 
-    case is_white_move {
-      True -> {
-        let prefix = int.to_string(move_number) <> ". "
-        MoveEntry(text: prefix <> san_text, is_current: is_current)
-      }
-      False -> MoveEntry(text: san_text, is_current: is_current)
+    let prefix = case is_white_move {
+      True -> int.to_string(move_number) <> ". "
+      False -> ""
     }
+    MoveEntry(prefix: prefix, text: san_text, is_current: is_current)
   })
 }
 
-/// Format move list as paired lines: "1. e4  e5", "2. Nf3  Nc6", etc.
-pub fn format_move_lines(game: Game) -> List(#(String, Bool)) {
+/// A paired line of white and black moves with individual current-move flags.
+pub type MoveLine {
+  MoveLine(
+    prefix: String,
+    white_text: String,
+    white_current: Bool,
+    black_text: String,
+    black_current: Bool,
+  )
+}
+
+/// Format move list as paired lines with per-move current flags.
+pub fn format_move_lines(game: Game) -> List(MoveLine) {
   let entries = format_move_list(game)
   format_pairs(entries, [])
 }
 
 fn format_pairs(
   entries: List(MoveEntry),
-  acc: List(#(String, Bool)),
-) -> List(#(String, Bool)) {
+  acc: List(MoveLine),
+) -> List(MoveLine) {
   case entries {
     [] -> list.reverse(acc)
     [white] -> {
-      let line = pad_right(white.text, 10)
-      list.reverse([#(line, white.is_current), ..acc])
+      list.reverse([
+        MoveLine(white.prefix, white.text, white.is_current, "", False),
+        ..acc
+      ])
     }
     [white, black, ..rest] -> {
-      let line = pad_right(white.text, 10) <> black.text
-      let is_current = white.is_current || black.is_current
-      format_pairs(rest, [#(line, is_current), ..acc])
+      let line =
+        MoveLine(
+          white.prefix,
+          white.text,
+          white.is_current,
+          black.text,
+          black.is_current,
+        )
+      format_pairs(rest, [line, ..acc])
     }
   }
 }
@@ -84,29 +101,41 @@ fn render_moves(
   let lines = format_move_lines(game)
   let visible = scroll_window(lines, max_lines)
   list.index_map(visible, fn(line, i) {
-    let #(text, is_current) = line
+    let is_current = line.white_current || line.black_current
     let prefix = case is_current {
       True -> ">"
       False -> " "
     }
-    let style_commands = case is_current {
-      True -> [command.SetAttributes([style.Bold])]
-      False -> []
-    }
+    let white_width = string.length(line.prefix) + string.length(line.white_text)
+    let white_pad = string.repeat(" ", 10 - white_width)
     list.flatten([
       [command.MoveTo(start_col, start_row + i), command.ResetStyle],
-      style_commands,
-      [command.Print(prefix <> text), command.Clear(terminal.UntilNewLine)],
+      [command.Print(prefix <> line.prefix)],
+      render_half(line.white_text, line.white_current),
+      [command.Print(white_pad)],
+      render_half(line.black_text, line.black_current),
+      [command.ResetStyle, command.Clear(terminal.UntilNewLine)],
     ])
   })
   |> list.flatten
 }
 
+fn render_half(text: String, is_current: Bool) -> List(command.Command) {
+  case is_current {
+    True -> [
+      command.SetAttributes([style.Bold, style.Underline]),
+      command.Print(text),
+      command.ResetStyle,
+    ]
+    False -> [command.Print(text)]
+  }
+}
+
 /// Scroll a list of move lines so the current move is visible.
 fn scroll_window(
-  lines: List(#(String, Bool)),
+  lines: List(MoveLine),
   max_lines: Int,
-) -> List(#(String, Bool)) {
+) -> List(MoveLine) {
   let total = list.length(lines)
   case total <= max_lines {
     True -> lines
@@ -121,22 +150,14 @@ fn scroll_window(
   }
 }
 
-fn find_current_index(
-  lines: List(#(String, Bool)),
-  index: Int,
-) -> Int {
+fn find_current_index(lines: List(MoveLine), index: Int) -> Int {
   case lines {
     [] -> 0
-    [#(_, True), ..] -> index
-    [_, ..rest] -> find_current_index(rest, index + 1)
-  }
-}
-
-fn pad_right(s: String, width: Int) -> String {
-  let len = string.length(s)
-  case len >= width {
-    True -> s
-    False -> s <> string.repeat(" ", width - len)
+    [line, ..rest] ->
+      case line.white_current || line.black_current {
+        True -> index
+        False -> find_current_index(rest, index + 1)
+      }
   }
 }
 

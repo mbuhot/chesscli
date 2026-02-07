@@ -18,6 +18,14 @@ fn sample_game() -> game.Game {
   game.from_pgn(pgn_game)
 }
 
+fn long_game() -> game.Game {
+  let assert Ok(pgn_game) =
+    pgn.parse(
+      "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7",
+    )
+  game.from_pgn(pgn_game)
+}
+
 // --- Constructor tests ---
 
 pub fn new_creates_free_play_test() {
@@ -82,6 +90,38 @@ pub fn replay_end_jumps_to_end_test() {
   let state = app.from_game(sample_game())
   let #(state, effect) = app.update(state, event.End)
   assert state.game.current_index == 4
+  assert effect == Render
+}
+
+pub fn replay_page_down_skips_forward_10_turns_test() {
+  let state = app.from_game(long_game())
+  let #(state, effect) = app.update(state, event.PageDown)
+  // 10 full turns = 20 plies, long_game has exactly 20 plies
+  assert state.game.current_index == 20
+  assert effect == Render
+}
+
+pub fn replay_page_down_clamps_to_end_test() {
+  let state = app.from_game(sample_game())
+  let #(state, effect) = app.update(state, event.PageDown)
+  assert state.game.current_index == 4
+  assert effect == Render
+}
+
+pub fn replay_page_up_skips_backward_10_turns_test() {
+  let state = app.from_game(long_game())
+  let state = AppState(..state, game: game.goto_end(state.game))
+  let #(state, effect) = app.update(state, event.PageUp)
+  // 20 plies back from end (20) = 0
+  assert state.game.current_index == 0
+  assert effect == Render
+}
+
+pub fn replay_page_up_clamps_to_start_test() {
+  let state = app.from_game(sample_game())
+  let #(state, _) = app.update(state, event.RightArrow)
+  let #(state, effect) = app.update(state, event.PageUp)
+  assert state.game.current_index == 0
   assert effect == Render
 }
 
