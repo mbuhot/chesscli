@@ -1,7 +1,9 @@
 import chesscli/chess/color.{Black, White}
 import chesscli/engine/analysis.{
-  Best, Blunder, Excellent, Good, Inaccuracy, Mistake,
+  type MoveAnalysis, Best, Blunder, Excellent, Good, Inaccuracy, Mistake,
+  MoveAnalysis,
 }
+import gleam/list
 import chesscli/engine/uci.{Centipawns, Mate}
 import gleam/float
 
@@ -92,4 +94,46 @@ pub fn classification_to_string_test() {
   assert analysis.classification_to_string(Inaccuracy) == "Inaccuracy"
   assert analysis.classification_to_string(Mistake) == "Mistake"
   assert analysis.classification_to_string(Blunder) == "Blunder"
+}
+
+// --- build_game_analysis ---
+
+pub fn build_game_analysis_simple_test() {
+  // One move game: White plays e2e4, best was e2e4
+  // Evals: [0, +20] — two positions, one move
+  let evals = [Centipawns(0), Centipawns(20)]
+  let move_ucis = ["e2e4"]
+  let best_ucis = ["e2e4"]
+  let colors = [White]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  assert ga.evaluations == evals
+  assert list.length(ga.move_analyses) == 1
+  let assert [ma] = ga.move_analyses
+  assert ma.classification == Best
+  assert ma.move_index == 0
+}
+
+pub fn build_game_analysis_two_moves_alternating_test() {
+  // 1. e4 e5 — White plays best, Black plays best
+  let evals = [Centipawns(0), Centipawns(20), Centipawns(10)]
+  let move_ucis = ["e2e4", "e7e5"]
+  let best_ucis = ["e2e4", "e7e5"]
+  let colors = [White, Black]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  assert list.length(ga.move_analyses) == 2
+  let assert [ma0, ma1] = ga.move_analyses
+  assert ma0.classification == Best
+  assert ma1.classification == Best
+}
+
+pub fn build_game_analysis_detects_blunder_test() {
+  // White has +1.0, plays bad move, eval becomes -2.0 (3.0 pawn loss = blunder)
+  let evals = [Centipawns(100), Centipawns(-200)]
+  let move_ucis = ["g1h3"]
+  let best_ucis = ["e2e4"]
+  let colors = [White]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  let assert [ma] = ga.move_analyses
+  assert ma.classification == Blunder
+  assert ma.best_move_uci == "e2e4"
 }

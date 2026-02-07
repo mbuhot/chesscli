@@ -5,6 +5,7 @@ import chesscli/chess/color.{type Color, Black, White}
 import chesscli/engine/uci.{type Score, Centipawns, Mate}
 import gleam/float
 import gleam/int
+import gleam/list
 
 /// Quality classification for a single move.
 pub type MoveClassification {
@@ -83,6 +84,34 @@ pub fn classify_move(
           }
       }
   }
+}
+
+/// Build a complete game analysis from per-position evaluations and best moves.
+/// Takes N+1 evaluations (one per position), N move UCIs, N best-move UCIs,
+/// and a list of active colors for each move.
+pub fn build_game_analysis(
+  evaluations: List(Score),
+  move_ucis: List(String),
+  best_move_ucis: List(String),
+  active_colors: List(Color),
+) -> GameAnalysis {
+  let eval_pairs = list.window_by_2(evaluations)
+  let zipped =
+    list.zip(eval_pairs, list.zip(move_ucis, list.zip(best_move_ucis, active_colors)))
+  let move_analyses =
+    list.index_map(zipped, fn(entry, idx) {
+      let #(#(eval_before, eval_after), #(played, #(best, color))) = entry
+      let loss = eval_loss(eval_before, eval_after, color)
+      let classification = classify_move(loss, played, best)
+      MoveAnalysis(
+        move_index: idx,
+        eval_before: eval_before,
+        eval_after: eval_after,
+        best_move_uci: best,
+        classification: classification,
+      )
+    })
+  GameAnalysis(evaluations: evaluations, move_analyses: move_analyses)
 }
 
 /// Human-readable label for a classification.
