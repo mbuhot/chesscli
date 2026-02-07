@@ -35,6 +35,11 @@ const white_piece_fg = style.Rgb(255, 255, 255)
 
 const black_piece_fg = style.Rgb(30, 30, 30)
 
+/// Best move highlight colors (blue)
+const light_best_move_bg = style.Rgb(100, 160, 240)
+
+const dark_best_move_bg = style.Rgb(60, 120, 200)
+
 /// Controls how the board is rendered: perspective, and which squares to highlight.
 pub type RenderOptions {
   RenderOptions(
@@ -42,6 +47,8 @@ pub type RenderOptions {
     last_move_from: Option(Square),
     last_move_to: Option(Square),
     check_square: Option(Square),
+    best_move_from: Option(Square),
+    best_move_to: Option(Square),
   )
 }
 
@@ -52,6 +59,8 @@ pub fn default_options() -> RenderOptions {
     last_move_from: None,
     last_move_to: None,
     check_square: None,
+    best_move_from: None,
+    best_move_to: None,
   )
 }
 
@@ -192,6 +201,7 @@ fn render_rank_squares(
 }
 
 /// Pick the background color for a square, applying highlight overrides.
+/// Priority: check > best_move > last_move > normal.
 fn square_bg(
   sq: Square,
   is_light: Bool,
@@ -204,21 +214,34 @@ fn square_bg(
         False -> dark_check_bg
       }
     _ ->
-      case options.last_move_from, options.last_move_to {
+      case options.best_move_from, options.best_move_to {
         Some(from), _ if from == sq ->
           case is_light {
-            True -> light_last_move_bg
-            False -> dark_last_move_bg
+            True -> light_best_move_bg
+            False -> dark_best_move_bg
           }
         _, Some(to) if to == sq ->
           case is_light {
-            True -> light_last_move_bg
-            False -> dark_last_move_bg
+            True -> light_best_move_bg
+            False -> dark_best_move_bg
           }
         _, _ ->
-          case is_light {
-            True -> light_square_bg
-            False -> dark_square_bg
+          case options.last_move_from, options.last_move_to {
+            Some(from), _ if from == sq ->
+              case is_light {
+                True -> light_last_move_bg
+                False -> dark_last_move_bg
+              }
+            _, Some(to) if to == sq ->
+              case is_light {
+                True -> light_last_move_bg
+                False -> dark_last_move_bg
+              }
+            _, _ ->
+              case is_light {
+                True -> light_square_bg
+                False -> dark_square_bg
+              }
           }
       }
   }

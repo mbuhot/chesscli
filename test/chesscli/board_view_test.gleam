@@ -14,6 +14,8 @@ pub fn default_options_test() {
   assert opts.last_move_from == None
   assert opts.last_move_to == None
   assert opts.check_square == None
+  assert opts.best_move_from == None
+  assert opts.best_move_to == None
 }
 
 // --- Helper to extract SetBackgroundColor commands ---
@@ -37,6 +39,8 @@ pub fn last_move_highlights_appear_test() {
       last_move_from: Some(square.e2),
       last_move_to: Some(square.e4),
       check_square: None,
+      best_move_from: None,
+      best_move_to: None,
     )
   let commands = board_view.render(b, opts)
   let colors = bg_colors(commands)
@@ -54,6 +58,8 @@ pub fn last_move_dark_square_highlights_test() {
       last_move_from: Some(square.d2),
       last_move_to: Some(square.d4),
       check_square: None,
+      best_move_from: None,
+      best_move_to: None,
     )
   let commands = board_view.render(b, opts)
   let colors = bg_colors(commands)
@@ -73,6 +79,8 @@ pub fn check_highlight_appears_test() {
       last_move_from: None,
       last_move_to: None,
       check_square: Some(square.e1),
+      best_move_from: None,
+      best_move_to: None,
     )
   let commands = board_view.render(b, opts)
   let colors = bg_colors(commands)
@@ -91,11 +99,87 @@ pub fn check_overrides_last_move_test() {
       last_move_from: Some(square.e2),
       last_move_to: Some(square.e1),
       check_square: Some(square.e1),
+      best_move_from: None,
+      best_move_to: None,
     )
   let commands = board_view.render(b, opts)
   let colors = bg_colors(commands)
   let check_dark = style.Rgb(200, 100, 100)
   // Check should appear (on e1 which is dark)
+  assert list.contains(colors, check_dark) == True
+}
+
+// --- Best move highlights ---
+
+pub fn best_move_light_square_highlights_test() {
+  let b = board.initial()
+  let opts =
+    RenderOptions(
+      from_white: True,
+      last_move_from: None,
+      last_move_to: None,
+      check_square: None,
+      best_move_from: Some(square.e2),
+      best_move_to: Some(square.e4),
+    )
+  let commands = board_view.render(b, opts)
+  let colors = bg_colors(commands)
+  // e2 and e4 are light squares; best move light = Rgb(100, 160, 240)
+  let best_move_light = style.Rgb(100, 160, 240)
+  assert list.contains(colors, best_move_light) == True
+}
+
+pub fn best_move_dark_square_highlights_test() {
+  let b = board.initial()
+  let opts =
+    RenderOptions(
+      from_white: True,
+      last_move_from: None,
+      last_move_to: None,
+      check_square: None,
+      best_move_from: Some(square.d2),
+      best_move_to: Some(square.d4),
+    )
+  let commands = board_view.render(b, opts)
+  let colors = bg_colors(commands)
+  // d2 and d4 are dark squares; best move dark = Rgb(60, 120, 200)
+  let best_move_dark = style.Rgb(60, 120, 200)
+  assert list.contains(colors, best_move_dark) == True
+}
+
+pub fn best_move_overrides_last_move_test() {
+  let b = board.initial()
+  let opts =
+    RenderOptions(
+      from_white: True,
+      last_move_from: Some(square.e2),
+      last_move_to: Some(square.e4),
+      check_square: None,
+      best_move_from: Some(square.e2),
+      best_move_to: Some(square.d4),
+    )
+  let commands = board_view.render(b, opts)
+  let colors = bg_colors(commands)
+  // e2 has both best move and last move; best move should win
+  let best_move_light = style.Rgb(100, 160, 240)
+  assert list.contains(colors, best_move_light) == True
+}
+
+pub fn check_overrides_best_move_test() {
+  let b = board.initial()
+  let opts =
+    RenderOptions(
+      from_white: True,
+      last_move_from: None,
+      last_move_to: None,
+      check_square: Some(square.e1),
+      best_move_from: Some(square.e1),
+      best_move_to: Some(square.e3),
+    )
+  let commands = board_view.render(b, opts)
+  let colors = bg_colors(commands)
+  // e1 has both check and best move; check should win
+  let check_dark = style.Rgb(200, 100, 100)
   assert list.contains(colors, check_dark) == True
 }
 
@@ -113,4 +197,8 @@ pub fn no_highlights_with_default_options_test() {
   assert list.contains(colors, last_move_dark) == False
   assert list.contains(colors, check_light) == False
   assert list.contains(colors, check_dark) == False
+  let best_move_light = style.Rgb(100, 160, 240)
+  let best_move_dark = style.Rgb(60, 120, 200)
+  assert list.contains(colors, best_move_light) == False
+  assert list.contains(colors, best_move_dark) == False
 }

@@ -1,10 +1,18 @@
+import chesscli/chess/fen
 import chesscli/chess/game
+import chesscli/chess/move
 import chesscli/chess/move_gen
+import chesscli/chess/position.{type Position}
+import chesscli/chess/square
 import chesscli/chesscom/client
 import chesscli/config
+import chesscli/engine/analysis
+import chesscli/engine/stockfish
+import chesscli/engine/uci
 import chesscli/tui/app.{type AppState, GameBrowser}
 import chesscli/tui/board_view.{RenderOptions}
 import chesscli/tui/captures_view
+import chesscli/tui/eval_bar
 import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
 import chesscli/tui/sound
@@ -16,7 +24,8 @@ import etch/terminal
 import gleam/javascript/promise
 import gleam/list
 import gleam/dict
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
+import gleam/string
 
 @external(javascript, "./chesscli/tui/tui_ffi.mjs", "exit")
 fn exit(n: Int) -> Nil
@@ -51,12 +60,15 @@ fn render_board(state: AppState) -> Nil {
     True -> move_gen.find_king(pos.board, pos.active_color)
     False -> None
   }
+  let #(best_from, best_to) = best_move_squares(state)
   let options =
     RenderOptions(
       from_white: state.from_white,
       last_move_from: option.map(last, fn(m) { m.from }),
       last_move_to: option.map(last, fn(m) { m.to }),
       check_square: check_square,
+      best_move_from: best_from,
+      best_move_to: best_to,
     )
 
   let board_commands = board_view.render(pos.board, options)
@@ -65,6 +77,7 @@ fn render_board(state: AppState) -> Nil {
   let captures_commands =
     captures_view.render(pos.board, state.from_white, 0, 12, 4, white_name, black_name)
   let panel_commands = info_panel.render(state.game, 31, 1, 10, state.analysis)
+  let eval_commands = render_eval_bar(state)
   let status_commands = status_bar.render(state, 13)
 
   stdout.execute(
@@ -72,6 +85,7 @@ fn render_board(state: AppState) -> Nil {
       board_commands,
       captures_commands,
       panel_commands,
+      eval_commands,
       status_commands,
     ]),
   )
@@ -168,10 +182,115 @@ fn handle_effect(state: AppState, effect: app.Effect) {
       handle_effect(new_state, eff)
     }
     app.AnalyzeGame -> {
-      // Full implementation in Step 10 — for now just render and continue
       render(state)
-      loop(state)
+      use engine <- promise.await(stockfish.start())
+      let positions = state.game.positions
+      let total = list.length(state.game.moves)
+      use result <- promise.await(
+        evaluate_positions(engine, positions, total, 0, state, []),
+      )
+      stockfish.stop(engine)
+      let #(evaluations, best_move_ucis) = result
+      let move_ucis =
+        list.map(state.game.moves, move.to_uci)
+      let active_colors =
+        list.map(list.take(positions, total), fn(pos) { pos.active_color })
+      let ga =
+        analysis.build_game_analysis(
+          evaluations,
+          move_ucis,
+          best_move_ucis,
+          active_colors,
+        )
+      let #(new_state, eff) = app.on_analysis_result(state, ga)
+      handle_effect(new_state, eff)
     }
+  }
+}
+
+/// Recursively evaluate each position, collecting evaluations and best moves.
+fn evaluate_positions(
+  engine: stockfish.EngineProcess,
+  positions: List(Position),
+  total: Int,
+  done: Int,
+  state: AppState,
+  acc: List(#(uci.Score, String)),
+) -> promise.Promise(#(List(uci.Score), List(String))) {
+  case positions {
+    [] -> {
+      let pairs = list.reverse(acc)
+      let evaluations = list.map(pairs, fn(p) { p.0 })
+      let best_moves = list.map(pairs, fn(p) { p.1 })
+      promise.resolve(#(evaluations, best_moves))
+    }
+    [pos, ..rest] -> {
+      let fen_str = fen.to_string(pos)
+      use lines <- promise.await(stockfish.evaluate(engine, fen_str, 18))
+      let #(eval, best) = parse_engine_output(lines)
+      let new_acc = [#(eval, best), ..acc]
+      let new_done = done + 1
+      // Update progress and render
+      let new_state =
+        app.AppState(..state, analysis_progress: Some(#(new_done, total + 1)))
+      render(new_state)
+      evaluate_positions(engine, rest, total, new_done, state, new_acc)
+    }
+  }
+}
+
+/// Parse Stockfish output lines to extract the deepest evaluation and best move.
+fn parse_engine_output(lines: List(String)) -> #(uci.Score, String) {
+  let default_score = uci.Centipawns(0)
+  let default_best = ""
+  let result =
+    list.fold(lines, #(default_score, default_best), fn(acc, line) {
+      case uci.parse_info(line) {
+        Ok(info) -> #(info.score, acc.1)
+        Error(_) ->
+          case uci.parse_bestmove(line) {
+            Ok(#(best, _)) -> #(acc.0, best)
+            Error(_) -> acc
+          }
+      }
+    })
+  result
+}
+
+/// Derive the best move squares from analysis for the current position.
+fn best_move_squares(state: AppState) -> #(Option(square.Square), Option(square.Square)) {
+  case state.analysis {
+    Some(ga) -> {
+      let idx = state.game.current_index
+      case list.drop(ga.move_analyses, idx) |> list.first {
+        Ok(ma) -> parse_uci_squares(ma.best_move_uci)
+        Error(_) -> #(None, None)
+      }
+    }
+    None -> #(None, None)
+  }
+}
+
+/// Parse a UCI move string (e.g. "e2e4") into from/to squares.
+fn parse_uci_squares(uci_str: String) -> #(Option(square.Square), Option(square.Square)) {
+  let from_str = string.slice(uci_str, 0, 2)
+  let to_str = string.slice(uci_str, 2, 2)
+  let from = option.from_result(square.from_string(from_str))
+  let to = option.from_result(square.from_string(to_str))
+  #(from, to)
+}
+
+/// Render the eval bar when analysis is available.
+fn render_eval_bar(state: AppState) -> List(command.Command) {
+  case state.analysis {
+    Some(ga) -> {
+      let idx = state.game.current_index
+      case list.drop(ga.evaluations, idx) |> list.first {
+        Ok(score) -> eval_bar.render(score, 0, 2, 8)
+        Error(_) -> []
+      }
+    }
+    None -> []
   }
 }
 

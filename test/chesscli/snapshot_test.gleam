@@ -1,9 +1,13 @@
 import chesscli/chess/game
 import chesscli/chess/move_gen
 import chesscli/chess/pgn
+import chesscli/chess/square
+import chesscli/engine/analysis.{GameAnalysis, MoveAnalysis, Best}
+import chesscli/engine/uci.{Centipawns}
 import chesscli/tui/app.{type AppState, AppState, GameBrowser}
 import chesscli/tui/board_view.{RenderOptions}
 import chesscli/tui/captures_view
+import chesscli/tui/eval_bar
 import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
 import chesscli/tui/status_bar
@@ -13,7 +17,8 @@ import etch/event
 import etch/style
 import gleam/list
 import gleam/dict
-import gleam/option.{None}
+import gleam/option.{None, Some}
+import gleam/string
 
 // --- virtual_terminal basic tests ---
 
@@ -253,6 +258,47 @@ pub fn browser_username_input_snapshot_test() {
 "
 }
 
+// --- Snapshot: replay with analysis shows eval bar and eval in status ---
+
+pub fn replay_with_analysis_snapshot_test() {
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5 2. Nf3")
+  let g = game.from_pgn(pgn_game)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let ga =
+    GameAnalysis(
+      evaluations: [Centipawns(0), Centipawns(35), Centipawns(20), Centipawns(45)],
+      move_analyses: [
+        MoveAnalysis(0, Centipawns(0), Centipawns(35), "e2e4", Best),
+        MoveAnalysis(1, Centipawns(35), Centipawns(20), "e7e5", Best),
+        MoveAnalysis(2, Centipawns(20), Centipawns(45), "g1f3", Best),
+      ],
+    )
+  let state = AppState(..app.from_game(g), game: g, analysis: Some(ga))
+  let result = render_snapshot(state)
+  // Eval bar appears at columns 0-1 on rows 2-9 (8 rows).
+  // At +0.20 (position after e5), bar is slightly white-biased.
+  // Status bar should show eval "+0.20".
+  // The current position eval bar label appears at row 6 (midpoint of rows 2-9).
+  // Eval bar at col 0-1 overwrites rank labels; "+0" label at midpoint row
+  assert result
+    == "
+   ┌────────────────────────┐  >1. e4     e5
+   │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   2. Nf3
+   │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
+   │                        │
+   │             ♟          │
++0 │             ♟          │
+   │                        │
+   │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
+   │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
+   └────────────────────────┘
+     a  b  c  d  e  f  g  h
+
+  [REPLAY] White | +0.20 | ←→ Home End f q
+"
+}
+
 // --- Helpers ---
 
 fn render_snapshot(state: app.AppState) -> String {
@@ -274,12 +320,15 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
         True -> move_gen.find_king(pos.board, pos.active_color)
         False -> None
       }
+      let #(best_from, best_to) = best_move_squares(state)
       let options =
         RenderOptions(
           from_white: state.from_white,
           last_move_from: option.map(last, fn(m) { m.from }),
           last_move_to: option.map(last, fn(m) { m.to }),
           check_square: check_square,
+          best_move_from: best_from,
+          best_move_to: best_to,
         )
 
       let board_commands = board_view.render(pos.board, options)
@@ -288,13 +337,49 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
       let captures_commands =
         captures_view.render(pos.board, state.from_white, 0, 12, 4, white_name, black_name)
       let panel_commands = info_panel.render(state.game, 31, 1, 10, state.analysis)
+      let eval_commands = render_eval_bar(state)
       let status_commands = status_bar.render(state, 13)
       list.flatten([
         board_commands,
         captures_commands,
         panel_commands,
+        eval_commands,
         status_commands,
       ])
     }
+  }
+}
+
+fn best_move_squares(state: AppState) -> #(option.Option(square.Square), option.Option(square.Square)) {
+  case state.analysis {
+    Some(ga) -> {
+      let idx = state.game.current_index
+      case list.drop(ga.move_analyses, idx) |> list.first {
+        Ok(ma) -> parse_uci_squares(ma.best_move_uci)
+        Error(_) -> #(None, None)
+      }
+    }
+    None -> #(None, None)
+  }
+}
+
+fn parse_uci_squares(uci_str: String) -> #(option.Option(square.Square), option.Option(square.Square)) {
+  let from_str = string.slice(uci_str, 0, 2)
+  let to_str = string.slice(uci_str, 2, 2)
+  let from = option.from_result(square.from_string(from_str))
+  let to = option.from_result(square.from_string(to_str))
+  #(from, to)
+}
+
+fn render_eval_bar(state: AppState) -> List(command.Command) {
+  case state.analysis {
+    Some(ga) -> {
+      let idx = state.game.current_index
+      case list.drop(ga.evaluations, idx) |> list.first {
+        Ok(score) -> eval_bar.render(score, 0, 2, 8)
+        Error(_) -> []
+      }
+    }
+    None -> []
   }
 }
