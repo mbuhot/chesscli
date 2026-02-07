@@ -574,7 +574,8 @@ pub fn is_in_check(pos: Position, color: Color) -> Bool {
   }
 }
 
-fn find_king(board: Board, color: Color) -> Option(Square) {
+/// Find the square of the king for the given color.
+pub fn find_king(board: Board, color: Color) -> Option(Square) {
   dict.fold(board.pieces, None, fn(acc, sq, cp) {
     case acc {
       Some(_) -> acc

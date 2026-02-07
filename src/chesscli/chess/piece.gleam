@@ -50,6 +50,18 @@ pub fn to_fen_char(cp: ColoredPiece) -> String {
   }
 }
 
+/// Standard material value for a piece type (Q=9, R=5, B=3, N=3, P=1, K=0).
+pub fn value(p: Piece) -> Int {
+  case p {
+    Queen -> 9
+    Rook -> 5
+    Bishop -> 3
+    Knight -> 3
+    Pawn -> 1
+    King -> 0
+  }
+}
+
 /// Parses a FEN piece character back into a ColoredPiece, returning Error(Nil)
 /// for unrecognized characters.
 pub fn from_fen_char(char: String) -> Result(ColoredPiece, Nil) {

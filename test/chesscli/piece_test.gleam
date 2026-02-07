@@ -92,3 +92,27 @@ pub fn from_fen_char_invalid_test() {
   assert piece.from_fen_char("1") == Error(Nil)
   assert piece.from_fen_char("") == Error(Nil)
 }
+
+pub fn value_queen_test() {
+  assert piece.value(Queen) == 9
+}
+
+pub fn value_rook_test() {
+  assert piece.value(Rook) == 5
+}
+
+pub fn value_bishop_test() {
+  assert piece.value(Bishop) == 3
+}
+
+pub fn value_knight_test() {
+  assert piece.value(Knight) == 3
+}
+
+pub fn value_pawn_test() {
+  assert piece.value(Pawn) == 1
+}
+
+pub fn value_king_test() {
+  assert piece.value(King) == 0
+}
