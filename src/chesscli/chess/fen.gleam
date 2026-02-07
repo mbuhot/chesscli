@@ -1,3 +1,7 @@
+//// Forsyth-Edwards Notation (FEN) parser and serializer.
+//// FEN is the standard text format for encoding a chess position in a single
+//// line, enabling game import/export and position setup.
+
 import chesscli/chess/board.{type Board, Board}
 import chesscli/chess/color.{Black, White}
 import chesscli/chess/piece.{type ColoredPiece}
@@ -10,6 +14,8 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 
+/// Describes which part of a FEN string failed to parse, carrying the
+/// offending input so callers can produce useful error messages.
 pub type FenError {
   InvalidBoard(String)
   InvalidActiveColor(String)
@@ -19,6 +25,8 @@ pub type FenError {
   InvalidFullmoveNumber(String)
 }
 
+/// Parses a FEN string into a Position, validating each of the six fields.
+/// Returns an error indicating the first invalid field encountered.
 pub fn parse(fen: String) -> Result(Position, FenError) {
   case string.split(fen, " ") {
     [board_str, color_str, castling_str, ep_str, halfmove_str, fullmove_str] -> {
@@ -41,6 +49,8 @@ pub fn parse(fen: String) -> Result(Position, FenError) {
   }
 }
 
+/// Serializes a Position back into a FEN string.
+/// Produces a canonical form that round-trips through parse.
 pub fn to_string(pos: Position) -> String {
   [
     board_to_string(pos.board),

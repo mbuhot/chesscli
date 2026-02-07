@@ -53,7 +53,7 @@ fn render_file_labels(
   let labels =
     list.index_map(files, fn(file_idx, i) {
       let assert Ok(file) = square.file_from_int(file_idx)
-      let label = file_to_label(file)
+      let label = square.file_to_string(file)
       let col = left_col + 2 + i * square_width
       [command.MoveTo(col, row), command.Print(label)]
     })
@@ -147,19 +147,6 @@ fn render_rank_squares(
     content
   })
   |> list.flatten
-}
-
-fn file_to_label(file: square.File) -> String {
-  case file {
-    square.A -> "a"
-    square.B -> "b"
-    square.C -> "c"
-    square.D -> "d"
-    square.E -> "e"
-    square.F -> "f"
-    square.G -> "g"
-    square.H -> "h"
-  }
 }
 
 fn string_repeat(s: String, n: Int) -> String {

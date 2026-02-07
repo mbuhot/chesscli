@@ -3,7 +3,7 @@ import chesscli/chess/color.{Black, White}
 import chesscli/chess/fen
 import chesscli/chess/piece.{ColoredPiece, King, Pawn, Rook}
 import chesscli/chess/position.{CastlingRights}
-import chesscli/chess/square.{A, E, H, R1, R3, R8, Square}
+import chesscli/chess/square
 import gleam/option.{None, Some}
 
 const starting_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -39,14 +39,10 @@ pub fn parse_starting_position_clocks_test() {
 
 pub fn parse_starting_position_pieces_test() {
   let assert Ok(pos) = fen.parse(starting_fen)
-  assert board.get(pos.board, Square(A, R1))
-    == Some(ColoredPiece(White, Rook))
-  assert board.get(pos.board, Square(E, R1))
-    == Some(ColoredPiece(White, King))
-  assert board.get(pos.board, Square(E, R8))
-    == Some(ColoredPiece(Black, King))
-  assert board.get(pos.board, Square(H, R8))
-    == Some(ColoredPiece(Black, Rook))
+  assert board.get(pos.board, square.a1) == Some(ColoredPiece(White, Rook))
+  assert board.get(pos.board, square.e1) == Some(ColoredPiece(White, King))
+  assert board.get(pos.board, square.e8) == Some(ColoredPiece(Black, King))
+  assert board.get(pos.board, square.h8) == Some(ColoredPiece(Black, Rook))
 }
 
 pub fn parse_after_e4_active_color_test() {
@@ -56,15 +52,14 @@ pub fn parse_after_e4_active_color_test() {
 
 pub fn parse_after_e4_en_passant_test() {
   let assert Ok(pos) = fen.parse(after_e4_fen)
-  assert pos.en_passant == Some(Square(E, R3))
+  assert pos.en_passant == Some(square.e3)
 }
 
 pub fn parse_after_e4_e4_pawn_test() {
   let assert Ok(pos) = fen.parse(after_e4_fen)
-  assert board.get(pos.board, Square(E, square.R4))
-    == Some(ColoredPiece(White, Pawn))
+  assert board.get(pos.board, square.e4) == Some(ColoredPiece(White, Pawn))
   // e2 should be empty
-  assert board.get(pos.board, Square(E, square.R2)) == None
+  assert board.get(pos.board, square.e2) == None
 }
 
 pub fn to_string_starting_position_test() {

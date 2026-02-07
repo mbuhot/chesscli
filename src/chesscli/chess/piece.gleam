@@ -1,5 +1,10 @@
+//// Defines the six chess piece types and pairs them with a color, providing
+//// conversions to Unicode glyphs for TUI rendering and FEN characters for
+//// position serialization.
+
 import chesscli/chess/color.{type Color, Black, White}
 
+/// The six distinct piece types in standard chess.
 pub type Piece {
   King
   Queen
@@ -9,6 +14,7 @@ pub type Piece {
   Pawn
 }
 
+/// A piece owned by a specific side, the fundamental unit placed on the board.
 pub type ColoredPiece {
   ColoredPiece(color: Color, piece: Piece)
 }
@@ -26,6 +32,7 @@ pub fn to_unicode(cp: ColoredPiece) -> String {
   }
 }
 
+/// Converts to the single-character FEN representation (uppercase = White, lowercase = Black).
 pub fn to_fen_char(cp: ColoredPiece) -> String {
   case cp {
     ColoredPiece(White, King) -> "K"
@@ -43,6 +50,8 @@ pub fn to_fen_char(cp: ColoredPiece) -> String {
   }
 }
 
+/// Parses a FEN piece character back into a ColoredPiece, returning Error(Nil)
+/// for unrecognized characters.
 pub fn from_fen_char(char: String) -> Result(ColoredPiece, Nil) {
   case char {
     "K" -> Ok(ColoredPiece(White, King))

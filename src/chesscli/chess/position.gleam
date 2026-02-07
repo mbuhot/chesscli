@@ -1,3 +1,7 @@
+//// Captures the full game state needed to determine all legal moves.
+//// Combines the board with side to move, castling rights, en passant,
+//// and move counters -- everything encoded in a FEN string.
+
 import chesscli/chess/board.{type Board}
 import chesscli/chess/color.{type Color}
 import chesscli/chess/square.{type Square}
@@ -16,6 +20,8 @@ pub type CastlingRights {
   )
 }
 
+/// The complete game state at a single point in time.
+/// Contains everything needed to determine all legal moves from this position.
 pub type Position {
   Position(
     board: Board,
@@ -31,6 +37,8 @@ pub type Position {
   )
 }
 
+/// Creates the standard starting position: all pieces placed, White to move,
+/// all castling rights available, no en passant, and move counters at zero/one.
 pub fn initial() -> Position {
   Position(
     board: board.initial(),
