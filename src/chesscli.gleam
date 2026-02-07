@@ -1,9 +1,13 @@
 import chesscli/chess/game
 import chesscli/chess/move_gen
-import chesscli/tui/app.{type AppState}
+import chesscli/chesscom/client
+import chesscli/config
+import chesscli/tui/app.{type AppState, GameBrowser}
 import chesscli/tui/board_view.{RenderOptions}
 import chesscli/tui/captures_view
+import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
+import chesscli/tui/sound
 import chesscli/tui/status_bar
 import etch/command
 import etch/event.{Key}
@@ -11,6 +15,7 @@ import etch/stdout
 import etch/terminal
 import gleam/javascript/promise
 import gleam/list
+import gleam/dict
 import gleam/option.{None, Some}
 
 @external(javascript, "./chesscli/tui/tui_ffi.mjs", "exit")
@@ -26,12 +31,20 @@ pub fn main() {
 
   event.init_event_server()
 
-  let state = app.new()
+  let saved_username = config.read_username()
+  let state = app.AppState(..app.new(), last_username: saved_username)
   render(state)
   loop(state)
 }
 
 fn render(state: AppState) -> Nil {
+  case state.mode {
+    GameBrowser -> render_browser(state)
+    _ -> render_board(state)
+  }
+}
+
+fn render_board(state: AppState) -> Nil {
   let pos = game.current_position(state.game)
   let last = app.last_move(state)
   let check_square = case move_gen.is_in_check(pos, pos.active_color) {
@@ -47,9 +60,11 @@ fn render(state: AppState) -> Nil {
     )
 
   let board_commands = board_view.render(pos.board, options)
+  let white_name = option.from_result(dict.get(state.game.tags, "White"))
+  let black_name = option.from_result(dict.get(state.game.tags, "Black"))
   let captures_commands =
-    captures_view.render(pos.board, state.from_white, 0, 12, 4)
-  let panel_commands = info_panel.render(state.game, 31, 1)
+    captures_view.render(pos.board, state.from_white, 0, 12, 4, white_name, black_name)
+  let panel_commands = info_panel.render(state.game, 31, 1, 10)
   let status_commands = status_bar.render(state, 13)
 
   stdout.execute(
@@ -62,23 +77,33 @@ fn render(state: AppState) -> Nil {
   )
 }
 
+fn render_browser(state: AppState) -> Nil {
+  let browser_commands = game_browser_view.render(state)
+  let status_commands = status_bar.render(state, 13)
+  stdout.execute(
+    list.flatten([
+      [command.Clear(terminal.All)],
+      browser_commands,
+      status_commands,
+    ]),
+  )
+}
+
 fn loop(state: AppState) {
   use evt <- promise.await(event.read())
   case evt {
     Some(Ok(Key(k))) -> {
       let #(new_state, effect) = app.update(state, k.code)
-      case effect {
-        app.Quit -> {
-          quit()
-          use _ <- promise.new()
-          Nil
-        }
-        app.Render -> {
-          render(new_state)
-          loop(new_state)
-        }
-        app.None -> loop(new_state)
+      case sound.determine_sound(state, new_state) {
+        Some(s) -> sound.play(s)
+        None -> Nil
       }
+      case state.mode, new_state.mode {
+        GameBrowser, GameBrowser -> Nil
+        GameBrowser, _ -> stdout.execute([command.Clear(terminal.All)])
+        _, _ -> Nil
+      }
+      handle_effect(new_state, effect)
     }
     Some(Ok(event.Resize(_, _))) -> {
       stdout.execute([command.Clear(terminal.All)])
@@ -86,6 +111,36 @@ fn loop(state: AppState) {
       loop(state)
     }
     _ -> loop(state)
+  }
+}
+
+fn handle_effect(state: AppState, effect: app.Effect) {
+  case effect {
+    app.Quit -> {
+      quit()
+      use _ <- promise.new()
+      Nil
+    }
+    app.Render -> {
+      render(state)
+      loop(state)
+    }
+    app.None -> loop(state)
+    app.FetchArchives(username) -> {
+      config.write_username(username)
+      render(state)
+      use result <- promise.await(client.fetch_archives(username))
+      let #(new_state, eff) =
+        app.on_fetch_result(state, app.ArchivesResult(result))
+      handle_effect(new_state, eff)
+    }
+    app.FetchGames(url) -> {
+      render(state)
+      use result <- promise.await(client.fetch_games(url))
+      let #(new_state, eff) =
+        app.on_fetch_result(state, app.GamesResult(result))
+      handle_effect(new_state, eff)
+    }
   }
 }
 
