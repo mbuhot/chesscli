@@ -94,16 +94,13 @@ fn loop(state: AppState) {
   case evt {
     Some(Ok(Key(k))) -> {
       let #(new_state, effect) = app.update(state, k.code)
-      case sound.determine_sound(state, new_state) {
-        Some(s) -> sound.play(s)
-        None -> Nil
+      case effect {
+        app.Render -> flush_then_render(state, new_state)
+        _ -> {
+          apply_transition_effects(state, new_state)
+          handle_effect(new_state, effect)
+        }
       }
-      case state.mode, new_state.mode {
-        GameBrowser, GameBrowser -> Nil
-        GameBrowser, _ -> stdout.execute([command.Clear(terminal.All)])
-        _, _ -> Nil
-      }
-      handle_effect(new_state, effect)
     }
     Some(Ok(event.Resize(_, _))) -> {
       stdout.execute([command.Clear(terminal.All)])
@@ -111,6 +108,35 @@ fn loop(state: AppState) {
       loop(state)
     }
     _ -> loop(state)
+  }
+}
+
+/// Discard all queued events, then render and resume.
+/// This prevents key-repeat events from piling up during slow renders.
+fn flush_then_render(original_state: AppState, state: AppState) {
+  use next <- promise.await(event.poll(0))
+  case next {
+    Some(_) -> flush_then_render(original_state, state)
+    None -> {
+      apply_transition_effects(original_state, state)
+      render(state)
+      loop(state)
+    }
+  }
+}
+
+fn apply_transition_effects(
+  original_state: AppState,
+  state: AppState,
+) -> Nil {
+  case sound.determine_sound(original_state, state) {
+    Some(s) -> sound.play(s)
+    None -> Nil
+  }
+  case original_state.mode, state.mode {
+    GameBrowser, GameBrowser -> Nil
+    GameBrowser, _ -> stdout.execute([command.Clear(terminal.All)])
+    _, _ -> Nil
   }
 }
 
