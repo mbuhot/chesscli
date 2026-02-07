@@ -90,3 +90,25 @@ pub fn parse_bestmove_without_ponder_test() {
 pub fn parse_bestmove_non_matching_returns_error_test() {
   assert uci.parse_bestmove("info depth 18 score cp 35") == Error(Nil)
 }
+
+// --- negate_score ---
+
+pub fn negate_score_positive_centipawns_test() {
+  assert uci.negate_score(Centipawns(35)) == Centipawns(-35)
+}
+
+pub fn negate_score_negative_centipawns_test() {
+  assert uci.negate_score(Centipawns(-120)) == Centipawns(120)
+}
+
+pub fn negate_score_zero_centipawns_test() {
+  assert uci.negate_score(Centipawns(0)) == Centipawns(0)
+}
+
+pub fn negate_score_positive_mate_test() {
+  assert uci.negate_score(Mate(3)) == Mate(-3)
+}
+
+pub fn negate_score_negative_mate_test() {
+  assert uci.negate_score(Mate(-2)) == Mate(2)
+}

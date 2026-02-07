@@ -1,3 +1,4 @@
+import chesscli/chess/color
 import chesscli/chess/fen
 import chesscli/chess/game
 import chesscli/chess/move
@@ -227,7 +228,12 @@ fn evaluate_positions(
     [pos, ..rest] -> {
       let fen_str = fen.to_string(pos)
       use lines <- promise.await(stockfish.evaluate(engine, fen_str, 18))
-      let #(eval, best) = parse_engine_output(lines)
+      let #(raw_eval, best) = parse_engine_output(lines)
+      // UCI scores are from side-to-move's perspective; normalize to white's
+      let eval = case pos.active_color {
+        color.White -> raw_eval
+        color.Black -> uci.negate_score(raw_eval)
+      }
       let new_acc = [#(eval, best), ..acc]
       let new_done = done + 1
       // Update progress and render

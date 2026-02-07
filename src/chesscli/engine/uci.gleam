@@ -37,6 +37,16 @@ pub fn format_score(score: Score) -> String {
   }
 }
 
+/// Negate a score, converting from one side's perspective to the other.
+/// UCI reports scores from the side-to-move's perspective; use this to
+/// normalize all evaluations to white's perspective.
+pub fn negate_score(score: Score) -> Score {
+  case score {
+    Centipawns(cp) -> Centipawns(-cp)
+    Mate(n) -> Mate(-n)
+  }
+}
+
 /// Parse a UCI "info" line into a UciInfo record.
 pub fn parse_info(line: String) -> Result(UciInfo, Nil) {
   let tokens = string.split(line, " ")
