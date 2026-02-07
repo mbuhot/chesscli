@@ -6,6 +6,7 @@ A terminal chess UI written in [Gleam](https://gleam.run/), targeting JavaScript
 
 - [Gleam](https://gleam.run/) >= 1.0
 - [Bun](https://bun.sh/) runtime
+- [Stockfish](https://stockfishchess.org/) (for game analysis — `brew install stockfish` on macOS)
 
 ## Running
 
@@ -24,6 +25,7 @@ Navigate through a loaded game's move history.
 | `Left` / `Right` | Step backward / forward one move |
 | `Home` / `End` | Jump to start / end of game |
 | `f` | Flip board |
+| `r` | Analyze game with Stockfish |
 | `b` | Open Chess.com game browser |
 | `q` | Quit |
 
@@ -67,6 +69,19 @@ Press `b` from Game Replay or Free Play mode to browse games from chess.com.
 | `Enter` | Select archive or load game |
 | `Escape` | Go back one step |
 | `q` | Exit browser |
+
+### Stockfish Analysis
+
+Press `r` in Game Replay mode to analyze the current game with Stockfish. The engine evaluates every position at depth 18, and the UI updates with progress as each position is analyzed.
+
+Once analysis completes, the following features become available:
+
+- **Eval bar** — a vertical bar on the left side of the board showing the current position's evaluation, with white fill growing from the bottom for white advantage
+- **Color-coded moves** — moves in the move list are colored by quality: green (best/excellent), yellow (inaccuracy), orange (mistake), red (blunder)
+- **Best move highlight** — the engine's recommended move is highlighted in blue on the board
+- **Eval in status bar** — the current position's evaluation is shown in the status bar (e.g. `+0.35`, `-1.50`, `M3`)
+
+Navigate through the game with arrow keys to see how the evaluation and best move change at each position. Loading a new game from the browser clears the analysis.
 
 ## Development
 
