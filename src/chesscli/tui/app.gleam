@@ -7,6 +7,7 @@ import chesscli/chess/move.{type Move}
 import chesscli/chesscom/api.{
   type ApiError, type ArchivesResponse, type GameSummary, type GamesResponse,
 }
+import chesscli/engine/analysis.{type GameAnalysis}
 import etch/event.{type KeyCode}
 import gleam/option.{type Option}
 
@@ -62,6 +63,8 @@ pub type AppState {
     input_error: String,
     browser: Option(BrowserState),
     last_username: Option(String),
+    analysis: Option(GameAnalysis),
+    analysis_progress: Option(#(Int, Int)),
   )
 }
 
@@ -72,6 +75,7 @@ pub type Effect {
   None
   FetchArchives(String)
   FetchGames(String)
+  AnalyzeGame
 }
 
 /// Create a new app state in FreePlay mode with a fresh game.
@@ -84,6 +88,8 @@ pub fn new() -> AppState {
     input_error: "",
     browser: option.None,
     last_username: option.None,
+    analysis: option.None,
+    analysis_progress: option.None,
   )
 }
 
@@ -97,6 +103,8 @@ pub fn from_game(g: Game) -> AppState {
     input_error: "",
     browser: option.None,
     last_username: option.None,
+    analysis: option.None,
+    analysis_progress: option.None,
   )
 }
 
@@ -136,11 +144,23 @@ fn update_game_replay(state: AppState, key: KeyCode) -> #(AppState, Effect) {
     event.Home -> #(AppState(..state, game: game.goto_start(state.game)), Render)
     event.End -> #(AppState(..state, game: game.goto_end(state.game)), Render)
     event.Char("f") -> #(AppState(..state, from_white: !state.from_white), Render)
+    event.Char("r") -> start_analysis(state)
     event.Char("b") -> enter_browser(state)
     event.Char("q") -> #(state, Quit)
     event.Char("/") -> enter_move_input(state)
     event.Char(c) -> try_auto_input(state, c)
     _ -> #(state, None)
+  }
+}
+
+fn start_analysis(state: AppState) -> #(AppState, Effect) {
+  let total = list.length(state.game.moves)
+  case total > 0 {
+    True -> #(
+      AppState(..state, analysis_progress: option.Some(#(0, total))),
+      AnalyzeGame,
+    )
+    False -> #(state, None)
   }
 }
 
@@ -412,6 +432,8 @@ fn update_game_list(
               mode: GameReplay,
               from_white: from_white,
               browser: option.None,
+              analysis: option.None,
+              analysis_progress: option.None,
             ),
             Render,
           )
@@ -450,6 +472,17 @@ fn update_load_error(
 
 fn exit_browser(state: AppState) -> #(AppState, Effect) {
   #(AppState(..state, mode: FreePlay, browser: option.None), Render)
+}
+
+/// Store the completed game analysis result and return to normal rendering.
+pub fn on_analysis_result(
+  state: AppState,
+  result: GameAnalysis,
+) -> #(AppState, Effect) {
+  #(
+    AppState(..state, analysis: option.Some(result), analysis_progress: option.None),
+    Render,
+  )
 }
 
 /// Process the result of an async chess.com API fetch.

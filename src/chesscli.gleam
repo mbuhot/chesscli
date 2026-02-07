@@ -167,6 +167,11 @@ fn handle_effect(state: AppState, effect: app.Effect) {
         app.on_fetch_result(state, app.GamesResult(result))
       handle_effect(new_state, eff)
     }
+    app.AnalyzeGame -> {
+      // Full implementation in Step 10 — for now just render and continue
+      render(state)
+      loop(state)
+    }
   }
 }
 

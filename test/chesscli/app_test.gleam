@@ -2,10 +2,12 @@ import chesscli/chess/game
 import chesscli/chess/pgn
 import chesscli/chess/square
 import chesscli/chesscom/api
+import chesscli/engine/analysis.{Blunder, GameAnalysis, MoveAnalysis}
+import chesscli/engine/uci.{Centipawns}
 import chesscli/tui/app.{
-  type AppState, AppState, ArchiveList, FetchArchives, FetchGames, FreePlay,
-  GameBrowser, GameList, GameReplay, LoadError, LoadingArchives, LoadingGames,
-  MoveInput, None, Quit, Render, UsernameInput,
+  type AppState, AnalyzeGame, AppState, ArchiveList, FetchArchives, FetchGames,
+  FreePlay, GameBrowser, GameList, GameReplay, LoadError, LoadingArchives,
+  LoadingGames, MoveInput, None, Quit, Render, UsernameInput,
 }
 import etch/event
 import gleam/list
@@ -732,4 +734,72 @@ pub fn load_error_q_exits_browser_test() {
   assert state.mode == FreePlay
   assert state.browser == option.None
   assert effect == Render
+}
+
+// --- Analysis: 'r' key starts analysis ---
+
+pub fn replay_r_starts_analysis_test() {
+  let state = app.from_game(sample_game())
+  let #(state, effect) = app.update(state, event.Char("r"))
+  assert effect == AnalyzeGame
+  assert state.analysis_progress == option.Some(#(0, 4))
+}
+
+pub fn replay_r_on_empty_game_is_noop_test() {
+  // FreePlay with no moves — r should do nothing
+  let state = app.new()
+  let state = AppState(..state, mode: GameReplay)
+  let #(_, effect) = app.update(state, event.Char("r"))
+  assert effect == None
+}
+
+pub fn on_analysis_result_stores_analysis_test() {
+  let state = app.from_game(sample_game())
+  let #(state, _) = app.update(state, event.Char("r"))
+  let ga =
+    GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
+  let #(state, effect) = app.on_analysis_result(state, ga)
+  assert state.analysis == option.Some(ga)
+  assert state.analysis_progress == option.None
+  assert effect == Render
+}
+
+pub fn navigation_preserves_analysis_test() {
+  let state = app.from_game(sample_game())
+  let ga =
+    GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
+  let state = AppState(..state, analysis: option.Some(ga))
+  let #(state, _) = app.update(state, event.RightArrow)
+  assert state.analysis == option.Some(ga)
+  assert state.game.current_index == 1
+}
+
+pub fn new_game_from_browser_clears_analysis_test() {
+  // Load a game with analysis, then load a new game from browser
+  let state = app.from_game(sample_game())
+  let ga =
+    GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
+  let state = AppState(..state, analysis: option.Some(ga))
+  // Simulate loading a new game from the browser game list
+  let state = game_list_state_from(state)
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.mode == GameReplay
+  assert state.analysis == option.None
+  assert state.analysis_progress == option.None
+}
+
+fn game_list_state_from(base: AppState) -> AppState {
+  // Set up browser in GameList phase with a valid game
+  let browser =
+    app.BrowserState(
+      username: "hi",
+      input_buffer: "hi",
+      archives: [],
+      archive_cursor: 0,
+      games: [sample_game_summary("1. d4 d5")],
+      game_cursor: 0,
+      phase: GameList,
+      error: "",
+    )
+  AppState(..base, mode: GameBrowser, browser: option.Some(browser))
 }
