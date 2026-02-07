@@ -1,6 +1,6 @@
 import chesscli/chess/color.{Black, White}
 import chesscli/engine/analysis.{
-  type MoveAnalysis, Best, Blunder, Excellent, Good, Inaccuracy, Mistake,
+  Best, Blunder, Excellent, GameAnalysis, Good, Inaccuracy, Mistake,
   MoveAnalysis,
 }
 import gleam/list
@@ -136,4 +136,96 @@ pub fn build_game_analysis_detects_blunder_test() {
   let assert [ma] = ga.move_analyses
   assert ma.classification == Blunder
   assert ma.best_move_uci == "e2e4"
+}
+
+// --- update_evaluation ---
+
+fn two_move_game_analysis() -> #(
+  analysis.GameAnalysis,
+  List(String),
+  List(color.Color),
+) {
+  // 1. e4 e5 — evals [0, +20, +10], both Best moves
+  let evals = [Centipawns(0), Centipawns(20), Centipawns(10)]
+  let move_ucis = ["e2e4", "e7e5"]
+  let best_ucis = ["e2e4", "e7e5"]
+  let colors = [White, Black]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  #(ga, move_ucis, colors)
+}
+
+pub fn update_evaluation_first_position_test() {
+  // Update position 0 — only move 0's eval_before changes
+  let #(ga, move_ucis, colors) = two_move_game_analysis()
+  let updated =
+    analysis.update_evaluation(ga, 0, Centipawns(10), "d2d4", move_ucis, colors)
+  // Evaluation at index 0 changed
+  let assert [first_eval, ..] = updated.evaluations
+  assert first_eval == Centipawns(10)
+  // Move 0 should be re-classified with new eval_before=10, eval_after=20
+  let assert [ma0, ma1] = updated.move_analyses
+  assert ma0.eval_before == Centipawns(10)
+  assert ma0.best_move_uci == "d2d4"
+  // Move 1 should be unchanged
+  assert ma1.eval_before == Centipawns(20)
+}
+
+pub fn update_evaluation_middle_position_test() {
+  // Update position 1 (middle) — move 0's eval_after AND move 1's eval_before change
+  let #(ga, move_ucis, colors) = two_move_game_analysis()
+  let updated =
+    analysis.update_evaluation(ga, 1, Centipawns(50), "d2d4", move_ucis, colors)
+  // Move 0's eval_after changed
+  let assert [ma0, ma1] = updated.move_analyses
+  assert ma0.eval_after == Centipawns(50)
+  // Move 1's eval_before changed
+  assert ma1.eval_before == Centipawns(50)
+}
+
+pub fn update_evaluation_last_position_test() {
+  // Update last position (index 2) — only move 1's eval_after changes
+  let #(ga, move_ucis, colors) = two_move_game_analysis()
+  let updated =
+    analysis.update_evaluation(ga, 2, Centipawns(-30), "d7d5", move_ucis, colors)
+  let assert [ma0, ma1] = updated.move_analyses
+  // Move 0 unchanged
+  assert ma0.eval_after == Centipawns(20)
+  // Move 1's eval_after changed
+  assert ma1.eval_after == Centipawns(-30)
+}
+
+pub fn update_evaluation_changes_classification_test() {
+  // White has +1.0, plays move, eval after is -0.5 (originally Good)
+  // Update eval_after to -2.0 → 3.0 pawn loss → Blunder
+  let evals = [Centipawns(100), Centipawns(-50)]
+  let move_ucis = ["g1h3"]
+  let best_ucis = ["e2e4"]
+  let colors = [White]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  let assert [ma] = ga.move_analyses
+  assert ma.classification == Mistake
+  // Now deepen position 1 to -200 — loss becomes 3.0 → Blunder
+  let updated =
+    analysis.update_evaluation(ga, 1, Centipawns(-200), "e2e4", move_ucis, colors)
+  let assert [ma_updated] = updated.move_analyses
+  assert ma_updated.classification == Blunder
+}
+
+pub fn update_evaluation_new_best_move_test() {
+  // Originally played == best (Best classification)
+  // After update, best move changes → classification depends on loss
+  let evals = [Centipawns(0), Centipawns(20)]
+  let move_ucis = ["e2e4"]
+  let best_ucis = ["e2e4"]
+  let colors = [White]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  let assert [ma] = ga.move_analyses
+  assert ma.classification == Best
+  // Update position 0 with a different best move — now played != best
+  // Loss is still small (0→20 = -0.2, clamped to 0) → Excellent
+  let updated =
+    analysis.update_evaluation(ga, 0, Centipawns(0), "d2d4", move_ucis, colors)
+  let assert [ma_updated] = updated.move_analyses
+  assert ma_updated.best_move_uci == "d2d4"
+  assert ma_updated.classification == Excellent
 }

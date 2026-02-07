@@ -1,13 +1,15 @@
+import chesscli/chess/color
 import chesscli/chess/game
 import chesscli/chess/pgn
 import chesscli/chess/square
 import chesscli/chesscom/api
-import chesscli/engine/analysis.{Blunder, GameAnalysis, MoveAnalysis}
+import chesscli/engine/analysis
 import chesscli/engine/uci.{Centipawns}
 import chesscli/tui/app.{
-  type AppState, AnalyzeGame, AppState, ArchiveList, FetchArchives, FetchGames,
-  FreePlay, GameBrowser, GameList, GameReplay, LoadError, LoadingArchives,
-  LoadingGames, MoveInput, None, Quit, Render, UsernameInput,
+  type AppState, AnalyzeGame, AppState, ArchiveList, CancelDeepAnalysis,
+  ContinueDeepAnalysis, FetchArchives, FetchGames, FreePlay, GameBrowser,
+  GameList, GameReplay, LoadError, LoadingArchives, LoadingGames, MoveInput,
+  None, Quit, Render, UsernameInput,
 }
 import etch/event
 import gleam/list
@@ -753,21 +755,22 @@ pub fn replay_r_on_empty_game_is_noop_test() {
   assert effect == None
 }
 
-pub fn on_analysis_result_stores_analysis_test() {
+pub fn on_analysis_result_starts_deep_analysis_test() {
   let state = app.from_game(sample_game())
   let #(state, _) = app.update(state, event.Char("r"))
   let ga =
-    GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
+    analysis.GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
   let #(state, effect) = app.on_analysis_result(state, ga)
   assert state.analysis == option.Some(ga)
   assert state.analysis_progress == option.None
-  assert effect == Render
+  assert state.deep_analysis_index == option.Some(0)
+  assert effect == app.ContinueDeepAnalysis
 }
 
 pub fn navigation_preserves_analysis_test() {
   let state = app.from_game(sample_game())
   let ga =
-    GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
+    analysis.GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
   let state = AppState(..state, analysis: option.Some(ga))
   let #(state, _) = app.update(state, event.RightArrow)
   assert state.analysis == option.Some(ga)
@@ -778,7 +781,7 @@ pub fn new_game_from_browser_clears_analysis_test() {
   // Load a game with analysis, then load a new game from browser
   let state = app.from_game(sample_game())
   let ga =
-    GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
+    analysis.GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
   let state = AppState(..state, analysis: option.Some(ga))
   // Simulate loading a new game from the browser game list
   let state = game_list_state_from(state)
@@ -802,4 +805,64 @@ fn game_list_state_from(base: AppState) -> AppState {
       error: "",
     )
   AppState(..base, mode: GameBrowser, browser: option.Some(browser))
+}
+
+// --- Deep analysis: on_deep_eval_update ---
+
+fn analyzed_state() -> AppState {
+  let state = app.from_game(sample_game())
+  // Build a shallow analysis: 5 positions (4 moves), all evals 0
+  let evals = [Centipawns(0), Centipawns(0), Centipawns(0), Centipawns(0), Centipawns(0)]
+  let move_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
+  let best_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
+  let colors = [color.White, color.Black, color.White, color.Black]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  let #(state, _) = app.on_analysis_result(state, ga)
+  state
+}
+
+pub fn on_deep_eval_update_continues_test() {
+  let state = analyzed_state()
+  assert state.deep_analysis_index == option.Some(0)
+  // Update position 0 — should advance to 1
+  let #(state, effect) =
+    app.on_deep_eval_update(state, 0, Centipawns(10), "e2e4")
+  assert state.deep_analysis_index == option.Some(1)
+  assert effect == ContinueDeepAnalysis
+}
+
+pub fn on_deep_eval_update_completes_test() {
+  let state = analyzed_state()
+  // Set to last position index (4, since 5 positions total)
+  let state = AppState(..state, deep_analysis_index: option.Some(4))
+  let #(state, effect) =
+    app.on_deep_eval_update(state, 4, Centipawns(-5), "d2d4")
+  assert state.deep_analysis_index == option.None
+  assert effect == Render
+}
+
+pub fn navigation_during_deep_analysis_preserves_index_test() {
+  let state = analyzed_state()
+  let state = AppState(..state, deep_analysis_index: option.Some(3))
+  let #(state, _) = app.update(state, event.RightArrow)
+  assert state.deep_analysis_index == option.Some(3)
+  assert state.game.current_index == 1
+}
+
+pub fn new_game_clears_deep_analysis_index_test() {
+  let state = analyzed_state()
+  let state = AppState(..state, deep_analysis_index: option.Some(3))
+  let state = game_list_state_from(state)
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.mode == GameReplay
+  assert state.deep_analysis_index == option.None
+}
+
+pub fn restart_analysis_during_deep_cancels_test() {
+  let state = analyzed_state()
+  let state = AppState(..state, deep_analysis_index: option.Some(3))
+  let #(state, effect) = app.update(state, event.Char("r"))
+  assert effect == CancelDeepAnalysis
+  assert state.deep_analysis_index == option.None
+  assert state.analysis_progress == option.Some(#(0, 4))
 }

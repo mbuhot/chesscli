@@ -4,6 +4,7 @@
 
 import chesscli/chess/game.{type Game}
 import chesscli/chess/move.{type Move}
+import chesscli/engine/uci
 import chesscli/chesscom/api.{
   type ApiError, type ArchivesResponse, type GameSummary, type GamesResponse,
 }
@@ -65,6 +66,7 @@ pub type AppState {
     last_username: Option(String),
     analysis: Option(GameAnalysis),
     analysis_progress: Option(#(Int, Int)),
+    deep_analysis_index: Option(Int),
   )
 }
 
@@ -76,6 +78,8 @@ pub type Effect {
   FetchArchives(String)
   FetchGames(String)
   AnalyzeGame
+  ContinueDeepAnalysis
+  CancelDeepAnalysis
 }
 
 /// Create a new app state in FreePlay mode with a fresh game.
@@ -90,6 +94,7 @@ pub fn new() -> AppState {
     last_username: option.None,
     analysis: option.None,
     analysis_progress: option.None,
+    deep_analysis_index: option.None,
   )
 }
 
@@ -105,6 +110,7 @@ pub fn from_game(g: Game) -> AppState {
     last_username: option.None,
     analysis: option.None,
     analysis_progress: option.None,
+    deep_analysis_index: option.None,
   )
 }
 
@@ -156,10 +162,21 @@ fn update_game_replay(state: AppState, key: KeyCode) -> #(AppState, Effect) {
 fn start_analysis(state: AppState) -> #(AppState, Effect) {
   let total = list.length(state.game.moves)
   case total > 0 {
-    True -> #(
-      AppState(..state, analysis_progress: option.Some(#(0, total))),
-      AnalyzeGame,
-    )
+    True ->
+      case state.deep_analysis_index {
+        option.Some(_) -> #(
+          AppState(
+            ..state,
+            analysis_progress: option.Some(#(0, total)),
+            deep_analysis_index: option.None,
+          ),
+          CancelDeepAnalysis,
+        )
+        option.None -> #(
+          AppState(..state, analysis_progress: option.Some(#(0, total))),
+          AnalyzeGame,
+        )
+      }
     False -> #(state, None)
   }
 }
@@ -434,6 +451,7 @@ fn update_game_list(
               browser: option.None,
               analysis: option.None,
               analysis_progress: option.None,
+              deep_analysis_index: option.None,
             ),
             Render,
           )
@@ -474,15 +492,66 @@ fn exit_browser(state: AppState) -> #(AppState, Effect) {
   #(AppState(..state, mode: FreePlay, browser: option.None), Render)
 }
 
-/// Store the completed game analysis result and return to normal rendering.
+/// Store the shallow analysis result and begin deep analysis pass.
 pub fn on_analysis_result(
   state: AppState,
   result: GameAnalysis,
 ) -> #(AppState, Effect) {
   #(
-    AppState(..state, analysis: option.Some(result), analysis_progress: option.None),
-    Render,
+    AppState(
+      ..state,
+      analysis: option.Some(result),
+      analysis_progress: option.None,
+      deep_analysis_index: option.Some(0),
+    ),
+    ContinueDeepAnalysis,
   )
+}
+
+/// Update a single position's evaluation during deep analysis.
+/// Increments the deep analysis index and continues, or completes when done.
+pub fn on_deep_eval_update(
+  state: AppState,
+  position_index: Int,
+  new_score: uci.Score,
+  new_best_uci: String,
+) -> #(AppState, Effect) {
+  let assert option.Some(ga) = state.analysis
+  let move_ucis = list.map(state.game.moves, move.to_uci)
+  let active_colors =
+    list.map(
+      list.take(state.game.positions, list.length(state.game.moves)),
+      fn(pos) { pos.active_color },
+    )
+  let updated_ga =
+    analysis.update_evaluation(
+      ga,
+      position_index,
+      new_score,
+      new_best_uci,
+      move_ucis,
+      active_colors,
+    )
+  let total_positions = list.length(state.game.positions)
+  let next_index = position_index + 1
+  case next_index >= total_positions {
+    True -> #(
+      AppState(
+        ..state,
+        analysis: option.Some(updated_ga),
+        deep_analysis_index: option.None,
+      ),
+      Render,
+    )
+    False -> #(
+      AppState(
+        ..state,
+        analysis: option.Some(updated_ga),
+        deep_analysis_index: option.Some(next_index),
+      ),
+      ContinueDeepAnalysis,
+    )
+  }
 }
 
 /// Process the result of an async chess.com API fetch.

@@ -107,6 +107,17 @@ fn parse_info_tokens(
   }
 }
 
+/// Format a UCI position command using incremental moves for TT reuse.
+/// With no moves: "position fen <fen>".
+/// With moves: "position fen <fen> moves e2e4 e7e5 ...".
+pub fn format_position_with_moves(fen: String, moves: List(String)) -> String {
+  let base = "position fen " <> fen
+  case moves {
+    [] -> base
+    _ -> base <> " moves " <> string.join(moves, " ")
+  }
+}
+
 fn format_centipawns(cp: Int) -> String {
   let abs = int.absolute_value(cp)
   let whole = abs / 100

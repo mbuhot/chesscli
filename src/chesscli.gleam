@@ -44,7 +44,7 @@ pub fn main() {
   let saved_username = config.read_username()
   let state = app.AppState(..app.new(), last_username: saved_username)
   render(state)
-  loop(state)
+  loop(state, None)
 }
 
 fn render(state: AppState) -> Nil {
@@ -104,38 +104,42 @@ fn render_browser(state: AppState) -> Nil {
   )
 }
 
-fn loop(state: AppState) {
+fn loop(state: AppState, engine: Option(stockfish.EngineProcess)) {
   use evt <- promise.await(event.read())
   case evt {
     Some(Ok(Key(k))) -> {
       let #(new_state, effect) = app.update(state, k.code)
       case effect {
-        app.Render -> flush_then_render(state, new_state)
+        app.Render -> flush_then_render(state, new_state, engine)
         _ -> {
           apply_transition_effects(state, new_state)
-          handle_effect(new_state, effect)
+          handle_effect(new_state, effect, engine)
         }
       }
     }
     Some(Ok(event.Resize(_, _))) -> {
       stdout.execute([command.Clear(terminal.All)])
       render(state)
-      loop(state)
+      loop(state, engine)
     }
-    _ -> loop(state)
+    _ -> loop(state, engine)
   }
 }
 
 /// Discard all queued events, then render and resume.
 /// This prevents key-repeat events from piling up during slow renders.
-fn flush_then_render(original_state: AppState, state: AppState) {
+fn flush_then_render(
+  original_state: AppState,
+  state: AppState,
+  engine: Option(stockfish.EngineProcess),
+) {
   use next <- promise.await(event.poll(0))
   case next {
-    Some(_) -> flush_then_render(original_state, state)
+    Some(_) -> flush_then_render(original_state, state, engine)
     None -> {
       apply_transition_effects(original_state, state)
       render(state)
-      loop(state)
+      loop(state, engine)
     }
   }
 }
@@ -155,45 +159,51 @@ fn apply_transition_effects(
   }
 }
 
-fn handle_effect(state: AppState, effect: app.Effect) {
+fn handle_effect(
+  state: AppState,
+  effect: app.Effect,
+  engine: Option(stockfish.EngineProcess),
+) {
   case effect {
     app.Quit -> {
+      stop_engine(engine)
       quit()
       use _ <- promise.new()
       Nil
     }
     app.Render -> {
       render(state)
-      loop(state)
+      loop(state, engine)
     }
-    app.None -> loop(state)
+    app.None -> loop(state, engine)
     app.FetchArchives(username) -> {
       config.write_username(username)
       render(state)
       use result <- promise.await(client.fetch_archives(username))
       let #(new_state, eff) =
         app.on_fetch_result(state, app.ArchivesResult(result))
-      handle_effect(new_state, eff)
+      handle_effect(new_state, eff, engine)
     }
     app.FetchGames(url) -> {
       render(state)
       use result <- promise.await(client.fetch_games(url))
       let #(new_state, eff) =
         app.on_fetch_result(state, app.GamesResult(result))
-      handle_effect(new_state, eff)
+      handle_effect(new_state, eff, engine)
     }
     app.AnalyzeGame -> {
+      stop_engine(engine)
       render(state)
-      use engine <- promise.await(stockfish.start())
+      use eng <- promise.await(stockfish.start())
+      use _ <- promise.await(stockfish.new_game(eng))
+      let start_fen = fen.to_string(starting_position(state.game))
+      let move_ucis = list.map(state.game.moves, move.to_uci)
       let positions = state.game.positions
       let total = list.length(state.game.moves)
       use result <- promise.await(
-        evaluate_positions(engine, positions, total, 0, state, []),
+        evaluate_positions_incremental(eng, start_fen, move_ucis, positions, total, 0, state, []),
       )
-      stockfish.stop(engine)
       let #(evaluations, best_move_ucis) = result
-      let move_ucis =
-        list.map(state.game.moves, move.to_uci)
       let active_colors =
         list.map(list.take(positions, total), fn(pos) { pos.active_color })
       let ga =
@@ -204,14 +214,96 @@ fn handle_effect(state: AppState, effect: app.Effect) {
           active_colors,
         )
       let #(new_state, eff) = app.on_analysis_result(state, ga)
-      handle_effect(new_state, eff)
+      handle_effect(new_state, eff, Some(eng))
+    }
+    app.ContinueDeepAnalysis -> {
+      case state.deep_analysis_index, engine {
+        Some(idx), Some(eng) -> {
+          let total_positions = list.length(state.game.positions)
+          case idx >= total_positions {
+            True -> {
+              // Deep analysis complete
+              let done_state =
+                app.AppState(..state, deep_analysis_index: None)
+              stockfish.stop(eng)
+              render(done_state)
+              loop(done_state, None)
+            }
+            False -> {
+              // Evaluate this position at depth 18
+              let start_fen = fen.to_string(starting_position(state.game))
+              let move_ucis = list.map(state.game.moves, move.to_uci)
+              let moves_prefix = list.take(move_ucis, idx)
+              let position_cmd =
+                uci.format_position_with_moves(start_fen, moves_prefix)
+              use _ <- promise.await(stockfish.new_game(eng))
+              use lines <- promise.await(
+                stockfish.evaluate_incremental(eng, position_cmd, 18),
+              )
+              let #(raw_eval, best) = parse_engine_output(lines)
+              let assert Ok(pos) =
+                list.drop(state.game.positions, idx) |> list.first
+              let eval = case pos.active_color {
+                color.White -> raw_eval
+                color.Black -> uci.negate_score(raw_eval)
+              }
+              let #(new_state, eff) =
+                app.on_deep_eval_update(state, idx, eval, best)
+              render(new_state)
+              // Cooperative multitasking: check for user input
+              use evt <- promise.await(event.poll(0))
+              case evt {
+                Some(Ok(Key(k))) -> {
+                  let #(input_state, input_eff) = app.update(new_state, k.code)
+                  apply_transition_effects(new_state, input_state)
+                  case input_eff {
+                    app.Render -> {
+                      render(input_state)
+                      handle_effect(input_state, eff, Some(eng))
+                    }
+                    _ -> handle_effect(input_state, input_eff, Some(eng))
+                  }
+                }
+                _ -> handle_effect(new_state, eff, Some(eng))
+              }
+            }
+          }
+        }
+        _, _ -> {
+          // No deep analysis to continue or no engine
+          render(state)
+          loop(state, engine)
+        }
+      }
+    }
+    app.CancelDeepAnalysis -> {
+      stop_engine(engine)
+      render(state)
+      // After cancel, start fresh analysis
+      handle_effect(state, app.AnalyzeGame, None)
     }
   }
 }
 
-/// Recursively evaluate each position, collecting evaluations and best moves.
-fn evaluate_positions(
+/// Get the starting position (first position) of a game.
+fn starting_position(g: game.Game) -> Position {
+  let assert [pos, ..] = g.positions
+  pos
+}
+
+/// Stop the engine if it's running.
+fn stop_engine(engine: Option(stockfish.EngineProcess)) -> Nil {
+  case engine {
+    Some(eng) -> stockfish.stop(eng)
+    None -> Nil
+  }
+}
+
+/// Recursively evaluate each position using incremental moves for TT reuse.
+fn evaluate_positions_incremental(
   engine: stockfish.EngineProcess,
+  start_fen: String,
+  move_ucis: List(String),
   positions: List(Position),
   total: Int,
   done: Int,
@@ -226,8 +318,12 @@ fn evaluate_positions(
       promise.resolve(#(evaluations, best_moves))
     }
     [pos, ..rest] -> {
-      let fen_str = fen.to_string(pos)
-      use lines <- promise.await(stockfish.evaluate(engine, fen_str, 18))
+      let moves_prefix = list.take(move_ucis, done)
+      let position_cmd =
+        uci.format_position_with_moves(start_fen, moves_prefix)
+      use lines <- promise.await(
+        stockfish.evaluate_incremental(engine, position_cmd, 10),
+      )
       let #(raw_eval, best) = parse_engine_output(lines)
       // UCI scores are from side-to-move's perspective; normalize to white's
       let eval = case pos.active_color {
@@ -240,7 +336,9 @@ fn evaluate_positions(
       let new_state =
         app.AppState(..state, analysis_progress: Some(#(new_done, total + 1)))
       render(new_state)
-      evaluate_positions(engine, rest, total, new_done, state, new_acc)
+      evaluate_positions_incremental(
+        engine, start_fen, move_ucis, rest, total, new_done, state, new_acc,
+      )
     }
   }
 }
@@ -249,18 +347,16 @@ fn evaluate_positions(
 fn parse_engine_output(lines: List(String)) -> #(uci.Score, String) {
   let default_score = uci.Centipawns(0)
   let default_best = ""
-  let result =
-    list.fold(lines, #(default_score, default_best), fn(acc, line) {
-      case uci.parse_info(line) {
-        Ok(info) -> #(info.score, acc.1)
-        Error(_) ->
-          case uci.parse_bestmove(line) {
-            Ok(#(best, _)) -> #(acc.0, best)
-            Error(_) -> acc
-          }
-      }
-    })
-  result
+  list.fold(lines, #(default_score, default_best), fn(acc, line) {
+    case uci.parse_info(line) {
+      Ok(info) -> #(info.score, acc.1)
+      Error(_) ->
+        case uci.parse_bestmove(line) {
+          Ok(#(best, _)) -> #(acc.0, best)
+          Error(_) -> acc
+        }
+    }
+  })
 }
 
 /// Derive the best move squares from analysis for the current position.

@@ -18,6 +18,20 @@ pub fn evaluate(
   depth: Int,
 ) -> Promise(List(String))
 
+/// Send "ucinewgame" + "isready" to reset the engine for a new game.
+@external(javascript, "./stockfish_ffi.mjs", "new_game")
+pub fn new_game(engine: EngineProcess) -> Promise(Nil)
+
+/// Send a pre-formatted position command and "go depth N", collect output.
+/// The position_cmd should be a complete UCI position string, e.g.
+/// "position fen <fen> moves e2e4 e7e5".
+@external(javascript, "./stockfish_ffi.mjs", "evaluate_incremental")
+pub fn evaluate_incremental(
+  engine: EngineProcess,
+  position_cmd: String,
+  depth: Int,
+) -> Promise(List(String))
+
 /// Send "quit" and kill the Stockfish process.
 @external(javascript, "./stockfish_ffi.mjs", "stop")
 pub fn stop(engine: EngineProcess) -> Nil

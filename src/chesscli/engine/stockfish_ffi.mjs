@@ -88,6 +88,26 @@ export async function evaluate(engine, fen, depth) {
   return toList(lines);
 }
 
+export async function new_game(engine) {
+  engine.lines = [];
+  engine._send("ucinewgame");
+  engine._send("isready");
+  await engine._waitFor((line) => line === "readyok");
+  engine.lines = [];
+}
+
+export async function evaluate_incremental(engine, position_cmd, depth) {
+  engine.lines = [];
+  engine._send(position_cmd);
+  engine._send("go depth " + depth);
+
+  const lines = await engine._waitFor((line) =>
+    line.startsWith("bestmove")
+  );
+
+  return toList(lines);
+}
+
 export function stop(engine) {
   engine._send("quit");
   try {

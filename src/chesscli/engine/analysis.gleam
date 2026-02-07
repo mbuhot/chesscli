@@ -114,6 +114,69 @@ pub fn build_game_analysis(
   GameAnalysis(evaluations: evaluations, move_analyses: move_analyses)
 }
 
+/// Update a single position's evaluation in an existing GameAnalysis.
+/// Replaces the score at position_index in evaluations, updates the best_move_uci,
+/// and re-classifies the affected move(s): move at index-1 (eval_after changes)
+/// and move at index (eval_before changes).
+pub fn update_evaluation(
+  ga: GameAnalysis,
+  position_index: Int,
+  new_score: Score,
+  new_best_uci: String,
+  move_ucis: List(String),
+  active_colors: List(Color),
+) -> GameAnalysis {
+  let new_evals = list_replace(ga.evaluations, position_index, new_score)
+  let new_move_analyses =
+    list.index_map(ga.move_analyses, fn(ma, idx) {
+      let affects_as_before = idx == position_index
+      let affects_as_after = idx == position_index - 1
+      case affects_as_before, affects_as_after {
+        True, _ -> {
+          let eval_before = new_score
+          let assert Ok(played) = list_at(move_ucis, idx)
+          let assert Ok(color) = list_at(active_colors, idx)
+          let loss = eval_loss(eval_before, ma.eval_after, color)
+          let classification = classify_move(loss, played, new_best_uci)
+          MoveAnalysis(
+            ..ma,
+            eval_before: eval_before,
+            best_move_uci: new_best_uci,
+            classification: classification,
+          )
+        }
+        _, True -> {
+          let eval_after = new_score
+          let assert Ok(played) = list_at(move_ucis, idx)
+          let assert Ok(color) = list_at(active_colors, idx)
+          let loss = eval_loss(ma.eval_before, eval_after, color)
+          let classification = classify_move(loss, played, ma.best_move_uci)
+          MoveAnalysis(..ma, eval_after: eval_after, classification: classification)
+        }
+        _, _ -> ma
+      }
+    })
+  GameAnalysis(evaluations: new_evals, move_analyses: new_move_analyses)
+}
+
+fn list_replace(lst: List(a), index: Int, value: a) -> List(a) {
+  list.index_map(lst, fn(item, i) {
+    case i == index {
+      True -> value
+      False -> item
+    }
+  })
+}
+
+fn list_at(lst: List(a), index: Int) -> Result(a, Nil) {
+  case lst, index {
+    [], _ -> Error(Nil)
+    [head, ..], 0 -> Ok(head)
+    [_, ..tail], n if n > 0 -> list_at(tail, n - 1)
+    _, _ -> Error(Nil)
+  }
+}
+
 /// Human-readable label for a classification.
 pub fn classification_to_string(class: MoveClassification) -> String {
   case class {

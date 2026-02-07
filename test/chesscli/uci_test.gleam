@@ -112,3 +112,23 @@ pub fn negate_score_positive_mate_test() {
 pub fn negate_score_negative_mate_test() {
   assert uci.negate_score(Mate(-2)) == Mate(2)
 }
+
+// --- format_position_with_moves ---
+
+pub fn format_position_with_moves_no_moves_test() {
+  let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+  assert uci.format_position_with_moves(fen, [])
+    == "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+}
+
+pub fn format_position_with_moves_single_move_test() {
+  let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+  assert uci.format_position_with_moves(fen, ["e2e4"])
+    == "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4"
+}
+
+pub fn format_position_with_moves_multiple_moves_test() {
+  let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+  assert uci.format_position_with_moves(fen, ["e2e4", "e7e5", "g1f3"])
+    == "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5 g1f3"
+}
