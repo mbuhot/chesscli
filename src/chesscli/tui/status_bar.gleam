@@ -3,9 +3,13 @@
 
 import chesscli/chess/color
 import chesscli/chess/game
-import chesscli/tui/app.{type AppState, FreePlay, GameReplay, MoveInput}
+import chesscli/tui/app.{
+  type AppState, ArchiveList, FreePlay, GameBrowser, GameList, GameReplay,
+  LoadError, LoadingArchives, LoadingGames, MoveInput, UsernameInput,
+}
 import etch/command
 import etch/terminal
+import gleam/option
 
 /// Format the status text based on the current app state.
 pub fn format_status(state: AppState) -> String {
@@ -17,6 +21,7 @@ pub fn format_status(state: AppState) -> String {
     FreePlay ->
       "[PLAY] " <> side <> " | u:undo f:flip q:quit"
     MoveInput -> "> " <> state.input_buffer <> "\u{2588}"
+    GameBrowser -> format_browser_status(state)
   }
 }
 
@@ -37,4 +42,18 @@ pub fn render(state: AppState, row: Int) -> List(command.Command) {
     clear_eol,
   ]
   [command.MoveTo(2, row), command.ResetStyle, command.Print(status), clear_eol, ..error_commands]
+}
+
+fn format_browser_status(state: AppState) -> String {
+  case state.browser {
+    option.Some(browser) ->
+      case browser.phase {
+        UsernameInput -> "[BROWSE] Enter username | Esc:back"
+        LoadingArchives | LoadingGames -> "[BROWSE] Loading..."
+        ArchiveList -> "[BROWSE] \u{2191}\u{2193}:select Enter:open Esc:back q:quit"
+        GameList -> "[BROWSE] \u{2191}\u{2193}:select Enter:load Esc:back q:quit"
+        LoadError -> "[BROWSE] Error | Esc:back q:quit"
+      }
+    option.None -> "[BROWSE]"
+  }
 }

@@ -6,7 +6,6 @@ import chesscli/chess/san
 import etch/command
 import etch/style
 import etch/terminal
-import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/string
@@ -65,55 +64,26 @@ fn format_pairs(
   }
 }
 
-/// Render the info panel at the given position.
+/// Render the move list panel at the given position, scrolling to keep
+/// the current move visible within max_height rows.
 pub fn render(
   game: Game,
   start_col: Int,
   start_row: Int,
+  max_height: Int,
 ) -> List(command.Command) {
-  let tag_commands = render_tags(game, start_col, start_row)
-  let tag_count = dict.size(game.tags)
-  let move_start_row = case tag_count > 0 {
-    True -> start_row + tag_count + 1
-    False -> start_row
-  }
-  let move_commands = render_moves(game, start_col, move_start_row)
-  list.flatten([tag_commands, move_commands])
-}
-
-fn render_tags(
-  game: Game,
-  start_col: Int,
-  start_row: Int,
-) -> List(command.Command) {
-  let white_tag = dict.get(game.tags, "White")
-  let black_tag = dict.get(game.tags, "Black")
-
-  let tags = case white_tag, black_tag {
-    Ok(w), Ok(b) -> [w, b]
-    Ok(w), _ -> [w]
-    _, Ok(b) -> [b]
-    _, _ -> []
-  }
-
-  list.index_map(tags, fn(tag, i) {
-    [
-      command.MoveTo(start_col, start_row + i),
-      command.ResetStyle,
-      command.Print(tag),
-      command.Clear(terminal.UntilNewLine),
-    ]
-  })
-  |> list.flatten
+  render_moves(game, start_col, start_row, max_height)
 }
 
 fn render_moves(
   game: Game,
   start_col: Int,
   start_row: Int,
+  max_lines: Int,
 ) -> List(command.Command) {
   let lines = format_move_lines(game)
-  list.index_map(lines, fn(line, i) {
+  let visible = scroll_window(lines, max_lines)
+  list.index_map(visible, fn(line, i) {
     let #(text, is_current) = line
     let prefix = case is_current {
       True -> ">"
@@ -130,6 +100,36 @@ fn render_moves(
     ])
   })
   |> list.flatten
+}
+
+/// Scroll a list of move lines so the current move is visible.
+fn scroll_window(
+  lines: List(#(String, Bool)),
+  max_lines: Int,
+) -> List(#(String, Bool)) {
+  let total = list.length(lines)
+  case total <= max_lines {
+    True -> lines
+    False -> {
+      let current_idx = find_current_index(lines, 0)
+      let half = max_lines / 2
+      let start = int.max(0, int.min(current_idx - half, total - max_lines))
+      lines
+      |> list.drop(start)
+      |> list.take(max_lines)
+    }
+  }
+}
+
+fn find_current_index(
+  lines: List(#(String, Bool)),
+  index: Int,
+) -> Int {
+  case lines {
+    [] -> 0
+    [#(_, True), ..] -> index
+    [_, ..rest] -> find_current_index(rest, index + 1)
+  }
 }
 
 fn pad_right(s: String, width: Int) -> String {

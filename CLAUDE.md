@@ -9,3 +9,4 @@
 
 - use `square.e4` constants instead of `Square(E, R4)` — only use the `Square(file, rank)` constructor for dynamic construction
 - don't duplicate utility functions across modules — make them public in the owning module (e.g. `square.file_to_string`, `square.rank_to_string`)
+- NEVER add packages directly to gleam.toml — ALWAYS use `gleam add <package>` as it selects the newest compatible version

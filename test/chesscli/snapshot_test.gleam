@@ -1,9 +1,10 @@
 import chesscli/chess/game
 import chesscli/chess/move_gen
 import chesscli/chess/pgn
-import chesscli/tui/app.{AppState}
+import chesscli/tui/app.{type AppState, AppState, GameBrowser}
 import chesscli/tui/board_view.{RenderOptions}
 import chesscli/tui/captures_view
+import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
 import chesscli/tui/status_bar
 import chesscli/tui/virtual_terminal
@@ -11,6 +12,7 @@ import etch/command
 import etch/event
 import etch/style
 import gleam/list
+import gleam/dict
 import gleam/option.{None}
 
 // --- virtual_terminal basic tests ---
@@ -172,6 +174,85 @@ pub fn captures_after_exchange_snapshot_test() {
 "
 }
 
+// --- Snapshot: long game with scroll ---
+
+pub fn long_game_replay_snapshot_test() {
+  let pgn_str =
+    "[White \"player1\"]
+[Black \"player2\"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7 11. Nbd2 Bb7 12. Bc2 Re8"
+  let assert Ok(pgn_game) = pgn.parse(pgn_str)
+  let g = game.from_pgn(pgn_game)
+  // Go to move 16 (8. c3) — middle of the game
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let assert Ok(g) = game.forward(g)
+  let state = AppState(..app.from_game(g), game: g)
+  let result = render_long_snapshot(state)
+  assert result
+    == "    player2
+   ┌────────────────────────┐   3. Bb5    a6
+ 8 │ ♜     ♝  ♛     ♜  ♚    │   4. Ba4    Nf6
+ 7 │       ♟     ♝  ♟  ♟  ♟ │   5. O-O    Be7
+ 6 │ ♟     ♞  ♟     ♞       │   6. Re1    b5
+ 5 │    ♟        ♟          │   7. Bb3    d6
+ 4 │             ♟          │  >8. c3     O-O
+ 3 │    ♝  ♟        ♞       │   9. h3     Nb8
+ 2 │ ♟  ♟     ♟     ♟  ♟  ♟ │   10. d4    Nbd7
+ 1 │ ♜  ♞  ♝  ♛  ♜     ♚    │   11. Nbd2  Bb7
+   └────────────────────────┘   12. Bc2   Re8
+     a  b  c  d  e  f  g  h
+    player1
+  [REPLAY] White | ←→ Home End f q
+"
+}
+
+fn render_long_snapshot(state: app.AppState) -> String {
+  let commands = render_full_ui(state)
+  virtual_terminal.render_to_string(commands, 55, 15)
+}
+
+// --- Snapshot: browser username input ---
+
+pub fn browser_username_input_snapshot_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("b"))
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("i"))
+  let #(state, _) = app.update(state, event.Char("k"))
+  let result = render_snapshot(state)
+  assert result
+    == "
+  Chess.com username: hik\u{2588}
+
+
+
+
+
+
+
+
+
+
+
+  [BROWSE] Enter username | Esc:back
+"
+}
+
 // --- Helpers ---
 
 fn render_snapshot(state: app.AppState) -> String {
@@ -179,30 +260,41 @@ fn render_snapshot(state: app.AppState) -> String {
   virtual_terminal.render_to_string(commands, 50, 15)
 }
 
-fn render_full_ui(state: app.AppState) -> List(command.Command) {
-  let pos = game.current_position(state.game)
-  let last = app.last_move(state)
-  let check_square = case move_gen.is_in_check(pos, pos.active_color) {
-    True -> move_gen.find_king(pos.board, pos.active_color)
-    False -> None
-  }
-  let options =
-    RenderOptions(
-      from_white: state.from_white,
-      last_move_from: option.map(last, fn(m) { m.from }),
-      last_move_to: option.map(last, fn(m) { m.to }),
-      check_square: check_square,
-    )
+fn render_full_ui(state: AppState) -> List(command.Command) {
+  case state.mode {
+    GameBrowser -> {
+      let browser_commands = game_browser_view.render(state)
+      let status_commands = status_bar.render(state, 13)
+      list.flatten([browser_commands, status_commands])
+    }
+    _ -> {
+      let pos = game.current_position(state.game)
+      let last = app.last_move(state)
+      let check_square = case move_gen.is_in_check(pos, pos.active_color) {
+        True -> move_gen.find_king(pos.board, pos.active_color)
+        False -> None
+      }
+      let options =
+        RenderOptions(
+          from_white: state.from_white,
+          last_move_from: option.map(last, fn(m) { m.from }),
+          last_move_to: option.map(last, fn(m) { m.to }),
+          check_square: check_square,
+        )
 
-  let board_commands = board_view.render(pos.board, options)
-  let captures_commands =
-    captures_view.render(pos.board, state.from_white, 0, 12, 4)
-  let panel_commands = info_panel.render(state.game, 31, 1)
-  let status_commands = status_bar.render(state, 13)
-  list.flatten([
-    board_commands,
-    captures_commands,
-    panel_commands,
-    status_commands,
-  ])
+      let board_commands = board_view.render(pos.board, options)
+      let white_name = option.from_result(dict.get(state.game.tags, "White"))
+      let black_name = option.from_result(dict.get(state.game.tags, "Black"))
+      let captures_commands =
+        captures_view.render(pos.board, state.from_white, 0, 12, 4, white_name, black_name)
+      let panel_commands = info_panel.render(state.game, 31, 1, 10)
+      let status_commands = status_bar.render(state, 13)
+      list.flatten([
+        board_commands,
+        captures_commands,
+        panel_commands,
+        status_commands,
+      ])
+    }
+  }
 }

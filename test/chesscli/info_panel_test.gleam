@@ -1,6 +1,7 @@
 import chesscli/chess/game
 import chesscli/chess/pgn
 import chesscli/tui/info_panel.{MoveEntry}
+import etch/command
 import gleam/list
 
 // --- format_move_list ---
@@ -99,8 +100,33 @@ pub fn render_produces_commands_test() {
   let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
   let g = game.from_pgn(pgn_game)
   let g = game.goto_end(g)
-  let commands = info_panel.render(g, 32, 1)
+  let commands = info_panel.render(g, 32, 1, 10)
   assert commands != []
+}
+
+// --- scrolling with long games ---
+
+pub fn render_long_game_limits_output_test() {
+  // 10+ move game should produce commands fitting within max_height
+  let assert Ok(pgn_game) =
+    pgn.parse(
+      "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7 11. Nbd2 Bb7 12. Bc2 Re8",
+    )
+  let g = game.from_pgn(pgn_game)
+  let g = game.goto_end(g)
+  // 24 moves = 12 lines of move pairs, but max_height 8 should limit to 8
+  let commands = info_panel.render(g, 32, 1, 8)
+  // Count MoveTo commands to verify we don't exceed 8 rows of moves
+  let move_to_count =
+    list.filter(commands, fn(cmd) {
+      case cmd {
+        command.MoveTo(_, _) -> True
+        _ -> False
+      }
+    })
+    |> list.length
+  // Should have at most 8 MoveTo commands (one per visible line)
+  assert move_to_count <= 8
 }
 
 import gleam/string

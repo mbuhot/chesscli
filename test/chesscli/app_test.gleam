@@ -1,7 +1,12 @@
 import chesscli/chess/game
 import chesscli/chess/pgn
 import chesscli/chess/square
-import chesscli/tui/app.{AppState, FreePlay, GameReplay, MoveInput, None, Quit, Render}
+import chesscli/chesscom/api
+import chesscli/tui/app.{
+  type AppState, AppState, ArchiveList, FetchArchives, FetchGames, FreePlay,
+  GameBrowser, GameList, GameReplay, LoadError, LoadingArchives, LoadingGames,
+  MoveInput, None, Quit, Render, UsernameInput,
+}
 import etch/event
 import gleam/list
 import gleam/option
@@ -320,4 +325,371 @@ pub fn last_move_in_free_play_after_move_test() {
   let assert option.Some(m) = app.last_move(state)
   assert m.from == square.e2
   assert m.to == square.e4
+}
+
+// --- GameBrowser: entering ---
+
+pub fn replay_b_enters_browser_test() {
+  let state = app.from_game(sample_game())
+  let #(state, effect) = app.update(state, event.Char("b"))
+  assert state.mode == GameBrowser
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == UsernameInput
+  assert effect == Render
+}
+
+pub fn freeplay_b_enters_browser_test() {
+  let state = app.new()
+  let #(state, effect) = app.update(state, event.Char("b"))
+  assert state.mode == GameBrowser
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == UsernameInput
+  assert effect == Render
+}
+
+pub fn b_with_saved_username_skips_to_fetch_test() {
+  let state =
+    app.AppState(..app.new(), last_username: option.Some("hikaru"))
+  let #(state, effect) = app.update(state, event.Char("b"))
+  assert state.mode == GameBrowser
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == LoadingArchives
+  assert browser.username == "hikaru"
+  assert browser.input_buffer == "hikaru"
+  assert effect == FetchArchives("hikaru")
+}
+
+pub fn username_submit_saves_last_username_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("b"))
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("i"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.last_username == option.Some("hi")
+}
+
+// --- UsernameInput phase ---
+
+fn browser_state() -> AppState {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("b"))
+  state
+}
+
+pub fn username_typing_appends_test() {
+  let state = browser_state()
+  let #(state, effect) = app.update(state, event.Char("h"))
+  let assert option.Some(browser) = state.browser
+  assert browser.input_buffer == "h"
+  assert effect == Render
+  let #(state, _) = app.update(state, event.Char("i"))
+  let assert option.Some(browser) = state.browser
+  assert browser.input_buffer == "hi"
+}
+
+pub fn username_backspace_removes_test() {
+  let state = browser_state()
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("i"))
+  let #(state, effect) = app.update(state, event.Backspace)
+  let assert option.Some(browser) = state.browser
+  assert browser.input_buffer == "h"
+  assert effect == Render
+}
+
+pub fn username_escape_exits_browser_test() {
+  let state = browser_state()
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.mode == FreePlay
+  assert state.browser == option.None
+  assert effect == Render
+}
+
+pub fn username_enter_submits_test() {
+  let state = browser_state()
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("i"))
+  let #(state, effect) = app.update(state, event.Enter)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == LoadingArchives
+  assert browser.username == "hi"
+  assert effect == FetchArchives("hi")
+}
+
+pub fn username_enter_empty_is_noop_test() {
+  let state = browser_state()
+  let #(_, effect) = app.update(state, event.Enter)
+  assert effect == None
+}
+
+// --- on_fetch_result: archives ---
+
+fn loading_archives_state() -> AppState {
+  let state = browser_state()
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("i"))
+  let #(state, _) = app.update(state, event.Enter)
+  state
+}
+
+pub fn archives_success_shows_list_test() {
+  let state = loading_archives_state()
+  let result =
+    app.ArchivesResult(Ok(api.ArchivesResponse(archives: [
+      "https://api.chess.com/pub/player/hi/games/2024/01",
+      "https://api.chess.com/pub/player/hi/games/2024/02",
+    ])))
+  let #(state, effect) = app.on_fetch_result(state, result)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == ArchiveList
+  // Reversed — newest first
+  assert browser.archive_cursor == 0
+  let assert [first, ..] = browser.archives
+  assert first == "https://api.chess.com/pub/player/hi/games/2024/02"
+  assert effect == Render
+}
+
+pub fn archives_empty_shows_list_test() {
+  let state = loading_archives_state()
+  let result = app.ArchivesResult(Ok(api.ArchivesResponse(archives: [])))
+  let #(state, effect) = app.on_fetch_result(state, result)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == ArchiveList
+  assert browser.archives == []
+  assert effect == Render
+}
+
+pub fn archives_error_shows_error_test() {
+  let state = loading_archives_state()
+  let result = app.ArchivesResult(Error(api.HttpError("network failure")))
+  let #(state, effect) = app.on_fetch_result(state, result)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == LoadError
+  assert browser.error == "HTTP error: network failure"
+  assert effect == Render
+}
+
+// --- ArchiveList phase ---
+
+fn archive_list_state() -> AppState {
+  let state = loading_archives_state()
+  let result =
+    app.ArchivesResult(Ok(api.ArchivesResponse(archives: [
+      "https://api.chess.com/pub/player/hi/games/2024/01",
+      "https://api.chess.com/pub/player/hi/games/2024/02",
+      "https://api.chess.com/pub/player/hi/games/2024/03",
+    ])))
+  let #(state, _) = app.on_fetch_result(state, result)
+  state
+}
+
+pub fn archive_list_down_moves_cursor_test() {
+  let state = archive_list_state()
+  let #(state, effect) = app.update(state, event.DownArrow)
+  let assert option.Some(browser) = state.browser
+  assert browser.archive_cursor == 1
+  assert effect == Render
+}
+
+pub fn archive_list_up_clamps_at_zero_test() {
+  let state = archive_list_state()
+  let #(state, effect) = app.update(state, event.UpArrow)
+  let assert option.Some(browser) = state.browser
+  assert browser.archive_cursor == 0
+  assert effect == Render
+}
+
+pub fn archive_list_enter_fetches_games_test() {
+  let state = archive_list_state()
+  let #(state, _) = app.update(state, event.DownArrow)
+  let #(state, effect) = app.update(state, event.Enter)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == LoadingGames
+  // Cursor at 1, archives are reversed so index 1 is the middle one
+  assert effect
+    == FetchGames("https://api.chess.com/pub/player/hi/games/2024/02")
+}
+
+pub fn archive_list_escape_goes_to_username_test() {
+  let state = archive_list_state()
+  let #(state, effect) = app.update(state, event.Esc)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == UsernameInput
+  assert effect == Render
+}
+
+pub fn archive_list_q_exits_browser_test() {
+  let state = archive_list_state()
+  let #(state, effect) = app.update(state, event.Char("q"))
+  assert state.mode == FreePlay
+  assert state.browser == option.None
+  assert effect == Render
+}
+
+// --- on_fetch_result: games ---
+
+fn sample_game_summary(pgn_str: String) -> api.GameSummary {
+  api.GameSummary(
+    url: "https://chess.com/game/123",
+    pgn: pgn_str,
+    time_control: "180",
+    time_class: "blitz",
+    end_time: 1_700_000_000,
+    rated: True,
+    white: api.PlayerInfo("hi", 1500, "win"),
+    black: api.PlayerInfo("opponent", 1400, "resigned"),
+    accuracy_white: 0.0,
+    accuracy_black: 0.0,
+  )
+}
+
+fn loading_games_state() -> AppState {
+  let state = archive_list_state()
+  // Press enter to select first archive
+  let #(state, _) = app.update(state, event.Enter)
+  state
+}
+
+pub fn games_success_shows_list_test() {
+  let state = loading_games_state()
+  let result =
+    app.GamesResult(Ok(api.GamesResponse(games: [
+      sample_game_summary("1. e4 e5"),
+      sample_game_summary("1. d4 d5"),
+    ])))
+  let #(state, effect) = app.on_fetch_result(state, result)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == GameList
+  assert browser.game_cursor == 0
+  assert list.length(browser.games) == 2
+  assert effect == Render
+}
+
+pub fn games_error_shows_error_test() {
+  let state = loading_games_state()
+  let result = app.GamesResult(Error(api.JsonError("bad json")))
+  let #(state, effect) = app.on_fetch_result(state, result)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == LoadError
+  assert browser.error == "JSON error: bad json"
+  assert effect == Render
+}
+
+// --- GameList phase ---
+
+fn game_list_state() -> AppState {
+  let state = loading_games_state()
+  let result =
+    app.GamesResult(Ok(api.GamesResponse(games: [
+      sample_game_summary("1. e4 e5 2. Nf3 Nc6"),
+      sample_game_summary("1. d4 d5 2. c4"),
+      sample_game_summary("1. e4 c5"),
+    ])))
+  let #(state, _) = app.on_fetch_result(state, result)
+  state
+}
+
+pub fn game_list_down_moves_cursor_test() {
+  let state = game_list_state()
+  let #(state, effect) = app.update(state, event.DownArrow)
+  let assert option.Some(browser) = state.browser
+  assert browser.game_cursor == 1
+  assert effect == Render
+}
+
+pub fn game_list_up_clamps_at_zero_test() {
+  let state = game_list_state()
+  let #(state, effect) = app.update(state, event.UpArrow)
+  let assert option.Some(browser) = state.browser
+  assert browser.game_cursor == 0
+  assert effect == Render
+}
+
+pub fn game_list_enter_loads_game_test() {
+  let state = game_list_state()
+  let #(state, effect) = app.update(state, event.Enter)
+  assert state.mode == GameReplay
+  assert state.browser == option.None
+  // Game should have moves from the selected PGN
+  assert state.game.current_index == 0
+  assert state.game.moves != []
+  assert effect == Render
+}
+
+pub fn game_list_enter_white_keeps_board_orientation_test() {
+  // User "hi" played as white — board stays from white's perspective
+  let state = game_list_state()
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.from_white == True
+}
+
+pub fn game_list_enter_black_flips_board_test() {
+  // User "hi" played as black — board should flip to black's perspective
+  let state = loading_games_state()
+  let game_as_black =
+    api.GameSummary(
+      ..sample_game_summary("1. e4 e5"),
+      white: api.PlayerInfo("opponent", 1500, "resigned"),
+      black: api.PlayerInfo("hi", 1400, "win"),
+    )
+  let result =
+    app.GamesResult(Ok(api.GamesResponse(games: [game_as_black])))
+  let #(state, _) = app.on_fetch_result(state, result)
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.mode == GameReplay
+  assert state.from_white == False
+}
+
+pub fn game_list_enter_bad_pgn_shows_error_test() {
+  // Create a game list with invalid PGN
+  let state = loading_games_state()
+  let result =
+    app.GamesResult(Ok(api.GamesResponse(games: [
+      sample_game_summary("not valid pgn!!!"),
+    ])))
+  let #(state, _) = app.on_fetch_result(state, result)
+  let #(state, effect) = app.update(state, event.Enter)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == LoadError
+  assert browser.error == "Failed to parse PGN"
+  assert effect == Render
+}
+
+pub fn game_list_escape_goes_to_archives_test() {
+  let state = game_list_state()
+  let #(state, effect) = app.update(state, event.Esc)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == ArchiveList
+  assert effect == Render
+}
+
+pub fn game_list_q_exits_browser_test() {
+  let state = game_list_state()
+  let #(state, effect) = app.update(state, event.Char("q"))
+  assert state.mode == FreePlay
+  assert state.browser == option.None
+  assert effect == Render
+}
+
+// --- LoadError phase ---
+
+pub fn load_error_escape_goes_to_username_test() {
+  let state = loading_archives_state()
+  let result = app.ArchivesResult(Error(api.HttpError("fail")))
+  let #(state, _) = app.on_fetch_result(state, result)
+  let #(state, effect) = app.update(state, event.Esc)
+  let assert option.Some(browser) = state.browser
+  assert browser.phase == UsernameInput
+  assert browser.error == ""
+  assert effect == Render
+}
+
+pub fn load_error_q_exits_browser_test() {
+  let state = loading_archives_state()
+  let result = app.ArchivesResult(Error(api.HttpError("fail")))
+  let #(state, _) = app.on_fetch_result(state, result)
+  let #(state, effect) = app.update(state, event.Char("q"))
+  assert state.mode == FreePlay
+  assert state.browser == option.None
+  assert effect == Render
 }

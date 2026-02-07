@@ -2,9 +2,10 @@ import chesscli/chess/board
 import chesscli/chess/square
 import chesscli/tui/captures_view
 import chesscli/tui/virtual_terminal
+import gleam/option.{None}
 
 pub fn initial_board_no_captures_test() {
-  let commands = captures_view.render(board.initial(), True, 0, 12, 4)
+  let commands = captures_view.render(board.initial(), True, 0, 12, 4, None, None)
   let result = virtual_terminal.render_to_string(commands, 40, 13)
   // Row 0 and row 12 should be empty (no captures)
   assert result
@@ -14,7 +15,7 @@ pub fn initial_board_no_captures_test() {
 pub fn white_captures_black_pawn_from_white_perspective_test() {
   // Remove a black pawn — white captured it
   let b = board.remove(board.initial(), square.a7)
-  let commands = captures_view.render(b, True, 0, 12, 4)
+  let commands = captures_view.render(b, True, 0, 12, 4, None, None)
   let result = virtual_terminal.render_to_string(commands, 40, 13)
   // Top row (0) = black's captures (empty), bottom row (12) = white's captures
   // Split into rows
@@ -28,7 +29,7 @@ pub fn white_captures_black_pawn_from_white_perspective_test() {
 pub fn white_captures_from_black_perspective_test() {
   // Remove a black pawn — white captured it, viewed from black perspective
   let b = board.remove(board.initial(), square.a7)
-  let commands = captures_view.render(b, False, 0, 12, 4)
+  let commands = captures_view.render(b, False, 0, 12, 4, None, None)
   let result = virtual_terminal.render_to_string(commands, 40, 13)
   // From black perspective: top = white's captures, bottom = black's captures
   let rows = string_split(result, "\n")
@@ -44,7 +45,7 @@ pub fn both_sides_capture_test() {
     board.initial()
     |> board.remove(square.a8)
     |> board.remove(square.b1)
-  let commands = captures_view.render(b, True, 0, 12, 4)
+  let commands = captures_view.render(b, True, 0, 12, 4, None, None)
   let result = virtual_terminal.render_to_string(commands, 40, 13)
   let rows = string_split(result, "\n")
   let assert Ok(top_row) = list_at(rows, 0)

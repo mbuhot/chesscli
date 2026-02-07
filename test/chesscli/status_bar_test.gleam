@@ -2,6 +2,7 @@ import chesscli/chess/game
 import chesscli/chess/pgn
 import chesscli/tui/app.{AppState, MoveInput}
 import chesscli/tui/status_bar
+import etch/event
 import gleam/string
 
 // --- format_status ---
@@ -62,4 +63,24 @@ pub fn render_produces_positioned_commands_test() {
   let commands = status_bar.render(state, 13)
   // Should contain at least a MoveTo and Print
   assert commands != []
+}
+
+// --- Browser mode status ---
+
+pub fn format_status_browser_username_input_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("b"))
+  let status = status_bar.format_status(state)
+  assert string.contains(status, "[BROWSE]") == True
+  assert string.contains(status, "Enter username") == True
+}
+
+pub fn format_status_browser_archive_list_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("b"))
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Enter)
+  // Now in LoadingArchives
+  let status = status_bar.format_status(state)
+  assert string.contains(status, "Loading") == True
 }
