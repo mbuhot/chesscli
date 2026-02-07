@@ -3,22 +3,35 @@
 
 import chesscli/chess/game.{type Game}
 import chesscli/chess/san
+import chesscli/engine/analysis.{
+  type GameAnalysis, type MoveClassification, Best, Blunder, Excellent, Good,
+  Inaccuracy, Mistake,
+}
 import etch/command
 import etch/style
 import etch/terminal
 import gleam/int
 import gleam/list
+import gleam/option.{type Option}
 import gleam/string
 
-/// A formatted entry in the move list: the display text and whether it's
-/// the move at the current cursor position.
+/// A formatted entry in the move list: the display text, whether it's
+/// the move at the current cursor position, and optional quality classification.
 pub type MoveEntry {
-  MoveEntry(prefix: String, text: String, is_current: Bool)
+  MoveEntry(
+    prefix: String,
+    text: String,
+    is_current: Bool,
+    classification: Option(MoveClassification),
+  )
 }
 
 /// Format the game's moves as a list of entries with current-move highlighting.
-/// Each entry is either a move number ("1."), a white move, or a black move.
-pub fn format_move_list(game: Game) -> List(MoveEntry) {
+/// When analysis is provided, each entry includes a move classification.
+pub fn format_move_list(
+  game: Game,
+  analysis: Option(GameAnalysis),
+) -> List(MoveEntry) {
   let moves = game.moves
   let positions = game.positions
   let cursor = game.current_index
@@ -34,24 +47,49 @@ pub fn format_move_list(game: Game) -> List(MoveEntry) {
       True -> int.to_string(move_number) <> ". "
       False -> ""
     }
-    MoveEntry(prefix: prefix, text: san_text, is_current: is_current)
+    let classification = get_classification(analysis, i)
+    MoveEntry(
+      prefix: prefix,
+      text: san_text,
+      is_current: is_current,
+      classification: classification,
+    )
   })
 }
 
-/// A paired line of white and black moves with individual current-move flags.
+fn get_classification(
+  analysis: Option(GameAnalysis),
+  move_index: Int,
+) -> Option(MoveClassification) {
+  case analysis {
+    option.None -> option.None
+    option.Some(ga) ->
+      list.find(ga.move_analyses, fn(ma) { ma.move_index == move_index })
+      |> option.from_result
+      |> option.map(fn(ma) { ma.classification })
+  }
+}
+
+/// A paired line of white and black moves with individual current-move flags
+/// and optional quality classifications.
 pub type MoveLine {
   MoveLine(
     prefix: String,
     white_text: String,
     white_current: Bool,
+    white_classification: Option(MoveClassification),
     black_text: String,
     black_current: Bool,
+    black_classification: Option(MoveClassification),
   )
 }
 
 /// Format move list as paired lines with per-move current flags.
-pub fn format_move_lines(game: Game) -> List(MoveLine) {
-  let entries = format_move_list(game)
+pub fn format_move_lines(
+  game: Game,
+  analysis: Option(GameAnalysis),
+) -> List(MoveLine) {
+  let entries = format_move_list(game, analysis)
   format_pairs(entries, [])
 }
 
@@ -63,7 +101,15 @@ fn format_pairs(
     [] -> list.reverse(acc)
     [white] -> {
       list.reverse([
-        MoveLine(white.prefix, white.text, white.is_current, "", False),
+        MoveLine(
+          white.prefix,
+          white.text,
+          white.is_current,
+          white.classification,
+          "",
+          False,
+          option.None,
+        ),
         ..acc
       ])
     }
@@ -73,8 +119,10 @@ fn format_pairs(
           white.prefix,
           white.text,
           white.is_current,
+          white.classification,
           black.text,
           black.is_current,
+          black.classification,
         )
       format_pairs(rest, [line, ..acc])
     }
@@ -88,8 +136,9 @@ pub fn render(
   start_col: Int,
   start_row: Int,
   max_height: Int,
+  analysis: Option(GameAnalysis),
 ) -> List(command.Command) {
-  render_moves(game, start_col, start_row, max_height)
+  render_moves(game, start_col, start_row, max_height, analysis)
 }
 
 fn render_moves(
@@ -97,8 +146,9 @@ fn render_moves(
   start_col: Int,
   start_row: Int,
   max_lines: Int,
+  analysis: Option(GameAnalysis),
 ) -> List(command.Command) {
-  let lines = format_move_lines(game)
+  let lines = format_move_lines(game, analysis)
   let visible = scroll_window(lines, max_lines)
   list.index_map(visible, fn(line, i) {
     let is_current = line.white_current || line.black_current
@@ -111,24 +161,46 @@ fn render_moves(
     list.flatten([
       [command.MoveTo(start_col, start_row + i), command.ResetStyle],
       [command.Print(prefix <> line.prefix)],
-      render_half(line.white_text, line.white_current),
+      render_half(line.white_text, line.white_current, line.white_classification),
       [command.Print(white_pad)],
-      render_half(line.black_text, line.black_current),
+      render_half(line.black_text, line.black_current, line.black_classification),
       [command.ResetStyle, command.Clear(terminal.UntilNewLine)],
     ])
   })
   |> list.flatten
 }
 
-fn render_half(text: String, is_current: Bool) -> List(command.Command) {
-  case is_current {
-    True -> [
-      command.SetAttributes([style.Bold, style.Underline]),
-      command.Print(text),
-      command.ResetStyle,
+fn render_half(
+  text: String,
+  is_current: Bool,
+  classification: Option(MoveClassification),
+) -> List(command.Command) {
+  let color_cmds = case classification {
+    option.Some(Best) | option.Some(Excellent) -> [
+      command.SetForegroundColor(style.Rgb(0, 180, 0)),
     ]
-    False -> [command.Print(text)]
+    option.Some(Good) -> []
+    option.Some(Inaccuracy) -> [
+      command.SetForegroundColor(style.Rgb(200, 180, 0)),
+    ]
+    option.Some(Mistake) -> [
+      command.SetForegroundColor(style.Rgb(220, 120, 0)),
+    ]
+    option.Some(Blunder) -> [
+      command.SetForegroundColor(style.Rgb(220, 50, 50)),
+    ]
+    option.None -> []
   }
+  let style_cmds = case is_current {
+    True -> [command.SetAttributes([style.Bold, style.Underline])]
+    False -> []
+  }
+  list.flatten([
+    color_cmds,
+    style_cmds,
+    [command.Print(text)],
+    [command.ResetStyle],
+  ])
 }
 
 /// Scroll a list of move lines so the current move is visible.
