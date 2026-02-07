@@ -133,7 +133,7 @@ pub fn replay_mode_snapshot_test() {
    └────────────────────────┘
      a  b  c  d  e  f  g  h
 
-  [REPLAY] White | ←→ Home End f q
+  [REPLAY] White | ←→ Home End f r q
 "
 }
 
@@ -217,7 +217,7 @@ pub fn long_game_replay_snapshot_test() {
    └────────────────────────┘   12. Bc2   Re8
      a  b  c  d  e  f  g  h
     player1
-  [REPLAY] White | ←→ Home End f q
+  [REPLAY] White | ←→ Home End f r q
 "
 }
 

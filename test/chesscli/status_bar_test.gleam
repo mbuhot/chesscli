@@ -1,8 +1,11 @@
 import chesscli/chess/game
 import chesscli/chess/pgn
+import chesscli/engine/analysis.{GameAnalysis}
+import chesscli/engine/uci.{Centipawns}
 import chesscli/tui/app.{AppState, MoveInput}
 import chesscli/tui/status_bar
 import etch/event
+import gleam/option
 import gleam/string
 
 // --- format_status ---
@@ -83,4 +86,37 @@ pub fn format_status_browser_archive_list_test() {
   // Now in LoadingArchives
   let status = status_bar.format_status(state)
   assert string.contains(status, "Loading") == True
+}
+
+// --- Analysis status ---
+
+pub fn format_status_replay_without_analysis_shows_r_hint_test() {
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
+  let state = app.from_game(game.from_pgn(pgn_game))
+  let status = status_bar.format_status(state)
+  assert string.contains(status, "[REPLAY]") == True
+  assert string.contains(status, " r ") == True
+}
+
+pub fn format_status_replay_with_analysis_shows_eval_test() {
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
+  let state = app.from_game(game.from_pgn(pgn_game))
+  let ga =
+    GameAnalysis(
+      evaluations: [Centipawns(0), Centipawns(35), Centipawns(20)],
+      move_analyses: [],
+    )
+  let state = AppState(..state, analysis: option.Some(ga))
+  let status = status_bar.format_status(state)
+  assert string.contains(status, "[REPLAY]") == True
+  assert string.contains(status, "0.00") == True
+}
+
+pub fn format_status_during_analysis_shows_progress_test() {
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
+  let state = app.from_game(game.from_pgn(pgn_game))
+  let state = AppState(..state, analysis_progress: option.Some(#(5, 41)))
+  let status = status_bar.format_status(state)
+  assert string.contains(status, "[ANALYZING]") == True
+  assert string.contains(status, "5/41") == True
 }
