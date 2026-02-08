@@ -6,8 +6,10 @@ import chesscli/chess/game
 import chesscli/engine/uci
 import chesscli/tui/app.{
   type AppState, ArchiveList, FreePlay, GameBrowser, GameList, GameReplay,
-  LoadError, LoadingArchives, LoadingGames, MoveInput, UsernameInput,
+  LoadError, LoadingArchives, LoadingGames, MoveInput, PuzzleTraining,
+  UsernameInput,
 }
+import chesscli/puzzle/puzzle
 import etch/command
 import etch/terminal
 import gleam/int
@@ -36,6 +38,7 @@ fn format_mode_status(state: AppState) -> String {
       "[PLAY] " <> side <> " | u:undo f:flip q:quit"
     MoveInput -> "> " <> state.input_buffer <> "\u{2588}"
     GameBrowser -> format_browser_status(state)
+    PuzzleTraining -> format_puzzle_status(state)
   }
 }
 
@@ -84,6 +87,20 @@ pub fn render(state: AppState, row: Int) -> List(command.Command) {
     clear_eol,
   ]
   [command.MoveTo(2, row), command.ResetStyle, command.Print(status), clear_eol, ..error_commands]
+}
+
+fn format_puzzle_status(state: AppState) -> String {
+  case state.puzzle_session {
+    option.Some(session) -> {
+      let pos = puzzle.current_puzzle(session)
+      let color_str = case pos {
+        option.Some(p) -> color.to_string(p.player_color)
+        option.None -> ""
+      }
+      color_str <> " | h:hint r:reveal n:next Esc:back q:quit"
+    }
+    option.None -> "h:hint r:reveal n:next q:quit"
+  }
 }
 
 fn format_browser_status(state: AppState) -> String {

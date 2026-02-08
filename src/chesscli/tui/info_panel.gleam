@@ -5,7 +5,7 @@ import chesscli/chess/game.{type Game}
 import chesscli/chess/san
 import chesscli/engine/analysis.{
   type GameAnalysis, type MoveClassification, Best, Blunder, Excellent, Good,
-  Inaccuracy, Mistake,
+  Inaccuracy, Miss, Mistake,
 }
 import etch/command
 import etch/style
@@ -209,6 +209,9 @@ fn render_half(
       command.SetForegroundColor(style.Rgb(0, 180, 0)),
     ]
     option.Some(Good) -> []
+    option.Some(Miss) -> [
+      command.SetForegroundColor(style.Rgb(0, 160, 200)),
+    ]
     option.Some(Inaccuracy) -> [
       command.SetForegroundColor(style.Rgb(200, 180, 0)),
     ]

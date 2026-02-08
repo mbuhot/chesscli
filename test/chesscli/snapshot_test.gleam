@@ -1,15 +1,19 @@
+import chesscli/chess/color
+import chesscli/chess/fen
 import chesscli/chess/game
 import chesscli/chess/move_gen
 import chesscli/chess/pgn
 import chesscli/chess/square
-import chesscli/engine/analysis.{GameAnalysis, MoveAnalysis, Best}
+import chesscli/engine/analysis.{Best, GameAnalysis, Mistake, MoveAnalysis}
 import chesscli/engine/uci.{Centipawns}
-import chesscli/tui/app.{type AppState, AppState, GameBrowser}
+import chesscli/puzzle/puzzle.{Puzzle}
+import chesscli/tui/app.{type AppState, AppState, GameBrowser, PuzzleTraining}
 import chesscli/tui/board_view.{RenderOptions}
 import chesscli/tui/captures_view
 import chesscli/tui/eval_bar
 import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
+import chesscli/tui/puzzle_view
 import chesscli/tui/status_bar
 import chesscli/tui/virtual_terminal
 import etch/command
@@ -269,9 +273,9 @@ pub fn replay_with_analysis_snapshot_test() {
     GameAnalysis(
       evaluations: [Centipawns(0), Centipawns(35), Centipawns(20), Centipawns(45)],
       move_analyses: [
-        MoveAnalysis(0, Centipawns(0), Centipawns(35), "e2e4", Best),
-        MoveAnalysis(1, Centipawns(35), Centipawns(20), "e7e5", Best),
-        MoveAnalysis(2, Centipawns(20), Centipawns(45), "g1f3", Best),
+        MoveAnalysis(0, Centipawns(0), Centipawns(35), "e2e4", [], Best),
+        MoveAnalysis(1, Centipawns(35), Centipawns(20), "e7e5", [], Best),
+        MoveAnalysis(2, Centipawns(20), Centipawns(45), "g1f3", [], Best),
       ],
     )
   let state = AppState(..app.from_game(g), game: g, analysis: Some(ga))
@@ -355,11 +359,154 @@ pub fn deep_analysis_black_move_fish_snapshot_test() {
 "
 }
 
+// --- Puzzle snapshots ---
+
+fn puzzle_snapshot_state() -> AppState {
+  let p =
+    Puzzle(
+      fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+      player_color: color.Black,
+      solution_uci: "d7d5",
+      played_uci: "e7e5",
+      continuation: ["d7d5", "e4d5", "d8d5"],
+      eval_before: "+0.2",
+      eval_after: "+1.7",
+      source_label: "Alice vs Bob",
+      classification: Mistake,
+      white_name: "Alice",
+      black_name: "Bob",
+      solve_count: 0,
+    )
+  let session = puzzle.new_session([p])
+  app.enter_puzzle_mode(app.from_game(game.new()), session)
+}
+
+pub fn puzzle_solving_snapshot_test() {
+  let state = puzzle_snapshot_state()
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    3 │                        │
+    4 │          ♟             │
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | h:hint r:reveal n:next Esc:back q:quit
+"
+}
+
+pub fn puzzle_hint_piece_snapshot_test() {
+  let state = puzzle_snapshot_state()
+  let #(state, _) = app.update(state, event.Char("h"))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    3 │                        │
+    4 │          ♟             │  Move your pawn
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | h:hint r:reveal n:next Esc:back q:quit
+"
+}
+
+pub fn puzzle_incorrect_then_hint_snapshot_test() {
+  let state = puzzle_snapshot_state()
+  // Type incorrect move "e5" and submit
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  // Request hint after incorrect guess
+  let #(state, _) = app.update(state, event.Char("h"))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    3 │                        │
+    4 │          ♟             │  Move your pawn
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | h:hint r:reveal n:next Esc:back q:quit
+"
+}
+
+pub fn puzzle_revealed_snapshot_test() {
+  let state = puzzle_snapshot_state()
+  let #(state, _) = app.update(state, event.Char("r"))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    3 │                        │  Best: d5 (eval +0.2)
+    4 │          ♟             │  You played: e5 (eval +1.7)
+    5 │                        │  1...d5 2. exd5 Qxd5
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | h:hint r:reveal n:next Esc:back q:quit
+"
+}
+
+pub fn puzzle_correct_snapshot_test() {
+  let state = puzzle_snapshot_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    3 │                        │  Correct!
+    4 │          ♟             │
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | h:hint r:reveal n:next Esc:back q:quit
+"
+}
+
 // --- Helpers ---
 
 fn render_snapshot(state: app.AppState) -> String {
   let commands = render_full_ui(state)
   virtual_terminal.render_to_string(commands, 50, 15)
+}
+
+fn render_puzzle_snapshot(state: app.AppState) -> String {
+  let commands = render_full_ui(state)
+  virtual_terminal.render_to_string(commands, 70, 15)
 }
 
 fn render_full_ui(state: AppState) -> List(command.Command) {
@@ -368,6 +515,39 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
       let browser_commands = game_browser_view.render(state)
       let status_commands = status_bar.render(state, 13)
       list.flatten([browser_commands, status_commands])
+    }
+    PuzzleTraining -> {
+      let assert Some(session) = state.puzzle_session
+      let assert Some(p) = puzzle.current_puzzle(session)
+      let pos = case fen.parse(p.fen) {
+        Ok(position) -> position
+        Error(_) -> game.current_position(state.game)
+      }
+      let #(best_from, best_to) = case state.puzzle_phase {
+        puzzle.Revealed | puzzle.Correct -> parse_uci_squares(p.solution_uci)
+        _ -> #(None, None)
+      }
+      let options =
+        RenderOptions(
+          from_white: state.from_white,
+          last_move_from: None,
+          last_move_to: None,
+          check_square: None,
+          best_move_from: best_from,
+          best_move_to: best_to,
+        )
+      let board_commands = board_view.render(pos.board, options)
+      let panel_commands =
+        puzzle_view.render(
+          session,
+          state.puzzle_phase,
+          state.puzzle_feedback,
+          pos.board,
+          state.input_buffer,
+          34, 1, 10,
+        )
+      let status_commands = status_bar.render(state, 13)
+      list.flatten([board_commands, panel_commands, status_commands])
     }
     _ -> {
       let pos = game.current_position(state.game)
@@ -439,3 +619,4 @@ fn render_eval_bar(state: AppState) -> List(command.Command) {
     None -> []
   }
 }
+

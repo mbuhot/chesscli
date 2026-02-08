@@ -1,7 +1,8 @@
 import chesscli/chess/game
 import chesscli/chess/pgn
-import chesscli/engine/analysis.{GameAnalysis}
+import chesscli/engine/analysis.{GameAnalysis, Mistake}
 import chesscli/engine/uci.{Centipawns}
+import chesscli/puzzle/puzzle.{Puzzle}
 import chesscli/tui/app.{AppState, MoveInput}
 import chesscli/tui/status_bar
 import etch/event
@@ -119,4 +120,49 @@ pub fn format_status_during_analysis_shows_progress_test() {
   let status = status_bar.format_status(state)
   assert string.contains(status, "[ANALYZING]") == True
   assert string.contains(status, "5/41") == True
+}
+
+// --- Puzzle mode status ---
+
+fn puzzle_status_state() -> app.AppState {
+  let p =
+    Puzzle(
+      fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+      player_color: game.new().positions |> fn(positions) {
+        let assert [pos, ..] = positions
+        pos.active_color
+      },
+      solution_uci: "d7d5",
+      played_uci: "e7e5",
+      continuation: [],
+      eval_before: "+0.2",
+      eval_after: "+1.7",
+      source_label: "test",
+      classification: Mistake,
+      white_name: "White",
+      black_name: "Black",
+      solve_count: 0,
+    )
+  let session = puzzle.new_session([p])
+  app.enter_puzzle_mode(app.from_game(game.new()), session)
+}
+
+pub fn format_status_puzzle_mode_shows_puzzle_label_test() {
+  let state = puzzle_status_state()
+  let status = status_bar.format_status(state)
+  assert string.contains(status, "h:hint") == True
+}
+
+pub fn format_status_puzzle_mode_shows_keybindings_test() {
+  let state = puzzle_status_state()
+  let status = status_bar.format_status(state)
+  assert string.contains(status, "h:hint") == True
+  assert string.contains(status, "r:reveal") == True
+  assert string.contains(status, "q:quit") == True
+}
+
+pub fn format_status_puzzle_no_session_test() {
+  let state = AppState(..app.new(), mode: app.PuzzleTraining)
+  let status = status_bar.format_status(state)
+  assert status == "h:hint r:reveal n:next q:quit"
 }

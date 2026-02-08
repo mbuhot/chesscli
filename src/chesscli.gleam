@@ -7,15 +7,19 @@ import chesscli/chess/position.{type Position}
 import chesscli/chess/square
 import chesscli/chesscom/client
 import chesscli/config
+import chesscli/puzzle/detector
+import chesscli/puzzle/puzzle
+import chesscli/puzzle/store
 import chesscli/engine/analysis
 import chesscli/engine/stockfish
 import chesscli/engine/uci
-import chesscli/tui/app.{type AppState, GameBrowser}
+import chesscli/tui/app.{type AppState, GameBrowser, PuzzleTraining}
 import chesscli/tui/board_view.{RenderOptions}
 import chesscli/tui/captures_view
 import chesscli/tui/eval_bar
 import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
+import chesscli/tui/puzzle_view
 import chesscli/tui/sound
 import chesscli/tui/status_bar
 import etch/command
@@ -55,6 +59,7 @@ pub fn main() {
 fn render(state: AppState) -> Nil {
   case state.mode {
     GameBrowser -> render_browser(state)
+    PuzzleTraining -> render_puzzle(state)
     _ -> render_board(state)
   }
 }
@@ -92,6 +97,52 @@ fn render_board(state: AppState) -> Nil {
       captures_commands,
       panel_commands,
       eval_commands,
+      status_commands,
+    ]),
+  )
+}
+
+fn render_puzzle(state: AppState) -> Nil {
+  let assert Some(session) = state.puzzle_session
+  let assert option.Some(p) = puzzle.current_puzzle(session)
+  let pos = case fen.parse(p.fen) {
+    Ok(position) -> position
+    Error(_) -> game.current_position(state.game)
+  }
+  let #(best_from, best_to) = case state.puzzle_phase {
+    puzzle.Revealed | puzzle.Correct -> parse_uci_squares(p.solution_uci)
+    _ -> #(None, None)
+  }
+  let options =
+    RenderOptions(
+      from_white: state.from_white,
+      last_move_from: None,
+      last_move_to: None,
+      check_square: None,
+      best_move_from: best_from,
+      best_move_to: best_to,
+    )
+  let board_commands = board_view.render(pos.board, options)
+  let white_name = option.Some(p.white_name)
+  let black_name = option.Some(p.black_name)
+  let name_commands =
+    captures_view.render_names(state.from_white, 0, 12, 7, white_name, black_name)
+  let panel_commands =
+    puzzle_view.render(
+      session,
+      state.puzzle_phase,
+      state.puzzle_feedback,
+      pos.board,
+      state.input_buffer,
+      34, 1, 10,
+    )
+  let status_commands = status_bar.render(state, 13)
+  stdout.execute(
+    list.flatten([
+      [command.Clear(terminal.All)],
+      board_commands,
+      name_commands,
+      panel_commands,
       status_commands,
     ]),
   )
@@ -194,8 +245,7 @@ fn apply_transition_effects(
     None -> Nil
   }
   case original_state.mode, state.mode {
-    GameBrowser, GameBrowser -> Nil
-    GameBrowser, _ -> stdout.execute([command.Clear(terminal.All)])
+    m1, m2 if m1 != m2 -> stdout.execute([command.Clear(terminal.All)])
     _, _ -> Nil
   }
 }
@@ -244,7 +294,7 @@ fn handle_effect(
       use result <- promise.await(
         evaluate_positions_incremental(eng, start_fen, move_ucis, positions, total, 0, state, []),
       )
-      let #(evaluations, best_move_ucis) = result
+      let #(evaluations, best_move_ucis, best_move_pvs) = result
       let active_colors =
         list.map(list.take(positions, total), fn(pos) { pos.active_color })
       let ga =
@@ -252,6 +302,7 @@ fn handle_effect(
           evaluations,
           move_ucis,
           best_move_ucis,
+          best_move_pvs,
           active_colors,
         )
       let #(new_state, eff) = app.on_analysis_result(state, ga)
@@ -277,7 +328,11 @@ fn handle_effect(
               let moves_prefix = list.take(move_ucis, idx)
               let position_cmd =
                 uci.format_position_with_moves(start_fen, moves_prefix)
-              stockfish.start_evaluation(eng, position_cmd, 18)
+              stockfish.start_evaluation_with_go(
+                eng,
+                position_cmd,
+                uci.format_go_movetime(500),
+              )
               render(state)
               // Return to loop — it polls for results between input checks
               loop(state, Some(eng))
@@ -296,6 +351,81 @@ fn handle_effect(
       // After cancel, start fresh analysis
       handle_effect(state, app.AnalyzeGame, None)
     }
+    app.StartPuzzles -> {
+      case state.analysis {
+        Some(ga) -> {
+          let player_color = user_color(state)
+          let new_puzzles = detector.find_puzzles(ga, state.game, player_color)
+          case new_puzzles {
+            [] -> {
+              let msg_state =
+                app.AppState(..state, input_error: "No mistakes found in this game.")
+              render(msg_state)
+              loop(msg_state, engine)
+            }
+            _ -> {
+              // Save merged puzzles to cache for later, but train on current game only
+              let existing = case store.read_puzzles() {
+                Some(cached) -> cached
+                None -> []
+              }
+              let all_puzzles = puzzle.merge_puzzles(existing, new_puzzles, 50)
+              store.write_puzzles(all_puzzles)
+              let session = puzzle.new_session(puzzle.shuffle(new_puzzles))
+              let new_state = app.enter_puzzle_mode(state, session)
+              render(new_state)
+              loop(new_state, engine)
+            }
+          }
+        }
+        None -> {
+          render(state)
+          loop(state, engine)
+        }
+      }
+    }
+    app.LoadCachedPuzzles -> {
+      case store.read_puzzles() {
+        Some(puzzles) if puzzles != [] -> {
+          let session = puzzle.new_session(puzzle.shuffle(puzzles))
+          let new_state = app.enter_puzzle_mode(state, session)
+          render(new_state)
+          loop(new_state, engine)
+        }
+        _ -> {
+          let msg_state =
+            app.AppState(..state, input_error: "No cached puzzles. Analyze a game first with 'r', then press 'p'.")
+          render(msg_state)
+          loop(msg_state, engine)
+        }
+      }
+    }
+    app.SavePuzzles -> {
+      case state.puzzle_session {
+        Some(session) -> {
+          let updated = puzzle.remove_mastered(session.puzzles)
+          let existing = case store.read_puzzles() {
+            Some(cached) -> cached
+            None -> []
+          }
+          let merged = puzzle.merge_puzzles(existing, updated, 50)
+          store.write_puzzles(merged)
+          render(state)
+          loop(state, engine)
+        }
+        None -> {
+          render(state)
+          loop(state, engine)
+        }
+      }
+    }
+    app.ScanForPuzzles | app.RefreshPuzzles -> {
+      // TODO: Implement auto-scan of chess.com games
+      let msg_state =
+        app.AppState(..state, input_error: "Auto-scan not yet implemented. Analyze a game first with 'r', then press 'p'.")
+      render(msg_state)
+      loop(msg_state, engine)
+    }
   }
 }
 
@@ -312,14 +442,14 @@ fn on_deep_eval_done(
   eng: stockfish.EngineProcess,
 ) {
   let assert Some(idx) = state.deep_analysis_index
-  let #(raw_eval, best) = parse_engine_output(lines)
+  let #(raw_eval, best, pv) = parse_engine_output(lines)
   let assert Ok(pos) =
     list.drop(state.game.positions, idx) |> list.first
   let eval = case pos.active_color {
     color.White -> raw_eval
     color.Black -> uci.negate_score(raw_eval)
   }
-  let #(new_state, _eff) = app.on_deep_eval_update(state, idx, eval, best)
+  let #(new_state, _eff) = app.on_deep_eval_update(state, idx, eval, best, pv)
   // If more positions remain, start the next evaluation non-blockingly
   case new_state.deep_analysis_index {
     Some(next_idx) -> {
@@ -338,7 +468,11 @@ fn on_deep_eval_done(
           let moves_prefix = list.take(move_ucis, next_idx)
           let position_cmd =
             uci.format_position_with_moves(start_fen, moves_prefix)
-          stockfish.start_evaluation(eng, position_cmd, 18)
+          stockfish.start_evaluation_with_go(
+            eng,
+            position_cmd,
+            uci.format_go_movetime(500),
+          )
           render(new_state)
           loop(new_state, Some(eng))
         }
@@ -370,14 +504,15 @@ fn evaluate_positions_incremental(
   total: Int,
   done: Int,
   state: AppState,
-  acc: List(#(uci.Score, String)),
-) -> promise.Promise(#(List(uci.Score), List(String))) {
+  acc: List(#(uci.Score, String, List(String))),
+) -> promise.Promise(#(List(uci.Score), List(String), List(List(String)))) {
   case positions {
     [] -> {
-      let pairs = list.reverse(acc)
-      let evaluations = list.map(pairs, fn(p) { p.0 })
-      let best_moves = list.map(pairs, fn(p) { p.1 })
-      promise.resolve(#(evaluations, best_moves))
+      let triples = list.reverse(acc)
+      let evaluations = list.map(triples, fn(p) { p.0 })
+      let best_moves = list.map(triples, fn(p) { p.1 })
+      let pvs = list.map(triples, fn(p) { p.2 })
+      promise.resolve(#(evaluations, best_moves, pvs))
     }
     [pos, ..rest] -> {
       let moves_prefix = list.take(move_ucis, done)
@@ -386,13 +521,13 @@ fn evaluate_positions_incremental(
       use lines <- promise.await(
         stockfish.evaluate_incremental(engine, position_cmd, 10),
       )
-      let #(raw_eval, best) = parse_engine_output(lines)
+      let #(raw_eval, best, pv) = parse_engine_output(lines)
       // UCI scores are from side-to-move's perspective; normalize to white's
       let eval = case pos.active_color {
         color.White -> raw_eval
         color.Black -> uci.negate_score(raw_eval)
       }
-      let new_acc = [#(eval, best), ..acc]
+      let new_acc = [#(eval, best, pv), ..acc]
       let new_done = done + 1
       // Update progress and render
       let new_state =
@@ -405,30 +540,56 @@ fn evaluate_positions_incremental(
   }
 }
 
-/// Parse Stockfish output lines to extract the deepest evaluation and best move.
-fn parse_engine_output(lines: List(String)) -> #(uci.Score, String) {
+/// Parse Stockfish output lines to extract the deepest evaluation, best move, and PV.
+fn parse_engine_output(lines: List(String)) -> #(uci.Score, String, List(String)) {
   let default_score = uci.Centipawns(0)
   let default_best = ""
-  list.fold(lines, #(default_score, default_best), fn(acc, line) {
+  let default_pv = []
+  list.fold(lines, #(default_score, default_best, default_pv), fn(acc, line) {
     case uci.parse_info(line) {
-      Ok(info) -> #(info.score, acc.1)
+      Ok(info) -> #(info.score, acc.1, info.pv)
       Error(_) ->
         case uci.parse_bestmove(line) {
-          Ok(#(best, _)) -> #(acc.0, best)
+          Ok(#(best, _)) -> #(acc.0, best, acc.2)
           Error(_) -> acc
         }
     }
   })
 }
 
+/// Determine which color the user played by matching last_username to game tags.
+fn user_color(state: AppState) -> Option(color.Color) {
+  case state.last_username {
+    Some(username) -> {
+      let lower = string.lowercase(username)
+      let white = option.from_result(dict.get(state.game.tags, "White"))
+      let black = option.from_result(dict.get(state.game.tags, "Black"))
+      case option.map(white, string.lowercase) == Some(lower) {
+        True -> Some(color.White)
+        False ->
+          case option.map(black, string.lowercase) == Some(lower) {
+            True -> Some(color.Black)
+            False -> None
+          }
+      }
+    }
+    None -> None
+  }
+}
+
 /// Derive the best move squares from analysis for the current position.
 fn best_move_squares(state: AppState) -> #(Option(square.Square), Option(square.Square)) {
   case state.analysis {
     Some(ga) -> {
-      let idx = state.game.current_index
-      case list.drop(ga.move_analyses, idx) |> list.first {
-        Ok(ma) -> parse_uci_squares(ma.best_move_uci)
-        Error(_) -> #(None, None)
+      // Show the best alternative to the last move played, not the best reply
+      let idx = state.game.current_index - 1
+      case idx >= 0 {
+        True ->
+          case list.drop(ga.move_analyses, idx) |> list.first {
+            Ok(ma) -> parse_uci_squares(ma.best_move_uci)
+            Error(_) -> #(None, None)
+          }
+        False -> #(None, None)
       }
     }
     None -> #(None, None)

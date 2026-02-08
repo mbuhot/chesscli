@@ -50,6 +50,25 @@ pub fn render(
   ])
 }
 
+/// Render just player names above and below the board, without captures.
+pub fn render_names(
+  from_white: Bool,
+  top_row: Int,
+  bottom_row: Int,
+  col: Int,
+  white_name: Option(String),
+  black_name: Option(String),
+) -> List(command.Command) {
+  let #(top_name, bottom_name) = case from_white {
+    True -> #(black_name, white_name)
+    False -> #(white_name, black_name)
+  }
+  list.flatten([
+    render_line(top_row, col, top_name, ""),
+    render_line(bottom_row, col, bottom_name, ""),
+  ])
+}
+
 fn render_line(
   row: Int,
   col: Int,

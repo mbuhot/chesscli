@@ -3,16 +3,22 @@ import chesscli/chess/game
 import chesscli/chess/pgn
 import chesscli/chess/square
 import chesscli/chesscom/api
-import chesscli/engine/analysis
+import chesscli/engine/analysis.{Blunder, Mistake}
 import chesscli/engine/uci.{Centipawns}
+import chesscli/puzzle/puzzle.{
+  type Puzzle, Correct, HintPiece, HintSquare, Incorrect, Puzzle, Revealed,
+  Solving,
+}
 import chesscli/tui/app.{
   type AppState, AnalyzeGame, AppState, ArchiveList, CancelDeepAnalysis,
   ContinueDeepAnalysis, FetchArchives, FetchGames, FreePlay, GameBrowser,
-  GameList, GameReplay, LoadError, LoadingArchives, LoadingGames, MoveInput,
-  None, Quit, Render, UsernameInput,
+  GameList, GameReplay, LoadCachedPuzzles, LoadError, LoadingArchives,
+  LoadingGames, MoveInput, None, PuzzleTraining, Quit, Render, StartPuzzles,
+  UsernameInput,
 }
 import etch/event
 import gleam/list
+import gleam/string
 import gleam/option
 
 // --- Helper ---
@@ -286,6 +292,12 @@ pub fn free_play_q_quits_test() {
   let state = app.new()
   let #(_, effect) = app.update(state, event.Char("q"))
   assert effect == Quit
+}
+
+pub fn free_play_p_loads_cached_puzzles_test() {
+  let state = app.new()
+  let #(_, effect) = app.update(state, event.Char("p"))
+  assert effect == LoadCachedPuzzles
 }
 
 pub fn free_play_typing_auto_enters_move_input_test() {
@@ -758,8 +770,15 @@ pub fn replay_r_on_empty_game_is_noop_test() {
 pub fn on_analysis_result_starts_deep_analysis_test() {
   let state = app.from_game(sample_game())
   let #(state, _) = app.update(state, event.Char("r"))
+  // Build analysis with a non-Best move so deep pass is triggered
   let ga =
-    analysis.GameAnalysis(evaluations: [Centipawns(0), Centipawns(20)], move_analyses: [])
+    analysis.build_game_analysis(
+      [Centipawns(0), Centipawns(20)],
+      ["e2e4"],
+      ["d2d4"],
+      [[]],
+      [color.White],
+    )
   let #(state, effect) = app.on_analysis_result(state, ga)
   assert state.analysis == option.Some(ga)
   assert state.analysis_progress == option.None
@@ -811,12 +830,12 @@ fn game_list_state_from(base: AppState) -> AppState {
 
 fn analyzed_state() -> AppState {
   let state = app.from_game(sample_game())
-  // Build a shallow analysis: 5 positions (4 moves), all evals 0
+  // Build a shallow analysis: 5 positions (4 moves), move 0 non-Best so deep pass starts
   let evals = [Centipawns(0), Centipawns(0), Centipawns(0), Centipawns(0), Centipawns(0)]
   let move_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
-  let best_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
+  let best_ucis = ["d2d4", "e7e5", "g1f3", "b8c6"]
   let colors = [color.White, color.Black, color.White, color.Black]
-  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, colors)
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, [[], [], [], []], colors)
   let #(state, _) = app.on_analysis_result(state, ga)
   state
 }
@@ -824,9 +843,9 @@ fn analyzed_state() -> AppState {
 pub fn on_deep_eval_update_continues_test() {
   let state = analyzed_state()
   assert state.deep_analysis_index == option.Some(0)
-  // Update position 0 — should advance to 1
+  // Update position 0 — best differs from played, so move 0 stays non-Best
   let #(state, effect) =
-    app.on_deep_eval_update(state, 0, Centipawns(10), "e2e4")
+    app.on_deep_eval_update(state, 0, Centipawns(10), "d2d4", [])
   assert state.deep_analysis_index == option.Some(1)
   assert effect == ContinueDeepAnalysis
 }
@@ -836,7 +855,7 @@ pub fn on_deep_eval_update_completes_test() {
   // Set to last position index (4, since 5 positions total)
   let state = AppState(..state, deep_analysis_index: option.Some(4))
   let #(state, effect) =
-    app.on_deep_eval_update(state, 4, Centipawns(-5), "d2d4")
+    app.on_deep_eval_update(state, 4, Centipawns(-5), "d2d4", [])
   assert state.deep_analysis_index == option.None
   assert effect == Render
 }
@@ -858,6 +877,64 @@ pub fn new_game_clears_deep_analysis_index_test() {
   assert state.deep_analysis_index == option.None
 }
 
+pub fn on_analysis_result_all_best_skips_deep_pass_test() {
+  let state = app.from_game(sample_game())
+  let #(state, _) = app.update(state, event.Char("r"))
+  // Build analysis where all moves are Best
+  let evals = [Centipawns(0), Centipawns(20), Centipawns(10), Centipawns(30), Centipawns(15)]
+  let move_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
+  let best_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
+  let colors = [color.White, color.Black, color.White, color.Black]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, [[], [], [], []], colors)
+  // All positions are skippable → no deep pass
+  let #(state, effect) = app.on_analysis_result(state, ga)
+  assert state.analysis == option.Some(ga)
+  assert state.deep_analysis_index == option.None
+  assert effect == Render
+}
+
+pub fn on_analysis_result_with_blunder_starts_deep_test() {
+  let state = app.from_game(sample_game())
+  let #(state, _) = app.update(state, event.Char("r"))
+  // Build analysis where move 0 is a Blunder (played e2e4, best d2d4, large eval swing)
+  let evals = [Centipawns(100), Centipawns(-200), Centipawns(-180), Centipawns(-150), Centipawns(-170)]
+  let move_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
+  let best_ucis = ["d2d4", "e7e5", "g1f3", "b8c6"]
+  let colors = [color.White, color.Black, color.White, color.Black]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, [[], [], [], []], colors)
+  // Verify move 0 is indeed a Blunder
+  let assert [ma0, ..] = ga.move_analyses
+  assert ma0.classification == Blunder
+  let #(state, effect) = app.on_analysis_result(state, ga)
+  assert state.analysis == option.Some(ga)
+  // Should start at position 0 (first non-skippable)
+  assert state.deep_analysis_index == option.Some(0)
+  assert effect == ContinueDeepAnalysis
+}
+
+pub fn on_deep_eval_update_skips_settled_positions_test() {
+  // Set up: move 0 is Blunder (played e2e4, best d2d4), moves 1-3 are Best
+  let state = app.from_game(sample_game())
+  let evals = [Centipawns(100), Centipawns(-200), Centipawns(-180), Centipawns(-150), Centipawns(-170)]
+  let move_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
+  let best_ucis = ["d2d4", "e7e5", "g1f3", "b8c6"]
+  let colors = [color.White, color.Black, color.White, color.Black]
+  let ga = analysis.build_game_analysis(evals, move_ucis, best_ucis, [[], [], [], []], colors)
+  let #(state, _) = app.on_analysis_result(state, ga)
+  // Deep analysis starts at 0 (Blunder's eval_before)
+  assert state.deep_analysis_index == option.Some(0)
+  // After updating position 0, keep best as "d2d4" (different from played "e2e4")
+  // so move 0 stays non-Best → position 1 still needs eval
+  let #(state, effect) = app.on_deep_eval_update(state, 0, Centipawns(120), "d2d4", [])
+  assert effect == ContinueDeepAnalysis
+  assert state.deep_analysis_index == option.Some(1)
+  // After updating position 1, use "e7e5" as best so move 1 stays Best.
+  // Remaining positions (2,3,4) have all-Best adjacent moves → done.
+  let #(state, effect) = app.on_deep_eval_update(state, 1, Centipawns(-210), "e7e5", [])
+  assert state.deep_analysis_index == option.None
+  assert effect == Render
+}
+
 pub fn restart_analysis_during_deep_cancels_test() {
   let state = analyzed_state()
   let state = AppState(..state, deep_analysis_index: option.Some(3))
@@ -865,4 +942,327 @@ pub fn restart_analysis_during_deep_cancels_test() {
   assert effect == CancelDeepAnalysis
   assert state.deep_analysis_index == option.None
   assert state.analysis_progress == option.Some(#(0, 4))
+}
+
+// --- PuzzleTraining ---
+
+fn sample_puzzle() -> Puzzle {
+  Puzzle(
+    fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+    player_color: color.Black,
+    solution_uci: "d7d5",
+    played_uci: "e7e5",
+    continuation: ["d7d5", "e4d5"],
+    eval_before: "+0.2",
+    eval_after: "+1.7",
+    source_label: "Alice vs Bob",
+    classification: Mistake,
+    white_name: "Alice",
+    black_name: "Bob",
+    solve_count: 0,
+  )
+}
+
+fn sample_puzzle_2() -> Puzzle {
+  Puzzle(
+    ..sample_puzzle(),
+    fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1",
+    solution_uci: "d7d5",
+    played_uci: "e7e5",
+  )
+}
+
+fn puzzle_state() -> AppState {
+  let session = puzzle.new_session([sample_puzzle(), sample_puzzle_2()])
+  app.enter_puzzle_mode(app.from_game(sample_game()), session)
+}
+
+// --- Mode transitions ---
+
+pub fn replay_p_with_analysis_starts_puzzles_test() {
+  let state = app.from_game(sample_game())
+  let ga =
+    analysis.GameAnalysis(evaluations: [Centipawns(0)], move_analyses: [])
+  let state = AppState(..state, analysis: option.Some(ga))
+  let #(_, effect) = app.update(state, event.Char("p"))
+  assert effect == StartPuzzles
+}
+
+pub fn replay_p_without_analysis_loads_cached_test() {
+  let state = app.from_game(sample_game())
+  let #(_, effect) = app.update(state, event.Char("p"))
+  assert effect == LoadCachedPuzzles
+}
+
+pub fn enter_puzzle_mode_sets_state_test() {
+  let state = puzzle_state()
+  assert state.mode == PuzzleTraining
+  assert state.puzzle_phase == Solving
+  assert state.puzzle_feedback == ""
+  assert state.input_buffer == ""
+  assert option.is_some(state.puzzle_session)
+}
+
+// --- Hint progression ---
+
+pub fn puzzle_h_advances_to_hint_piece_test() {
+  let state = puzzle_state()
+  let #(state, effect) = app.update(state, event.Char("h"))
+  assert state.puzzle_phase == HintPiece
+  assert effect == Render
+}
+
+pub fn puzzle_h_advances_to_hint_square_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, effect) = app.update(state, event.Char("h"))
+  assert state.puzzle_phase == HintSquare
+  assert effect == Render
+}
+
+pub fn puzzle_h_no_further_than_hint_square_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("h"))
+  assert state.puzzle_phase == HintSquare
+}
+
+// --- Correct / Incorrect answers ---
+
+pub fn puzzle_correct_answer_test() {
+  let state = puzzle_state()
+  // Type the correct UCI move
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("7"))
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, effect) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  assert state.puzzle_feedback == "Correct!"
+  assert state.input_buffer == ""
+  assert effect == Render
+}
+
+pub fn puzzle_correct_san_answer_test() {
+  let state = puzzle_state()
+  // Type the correct SAN move
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, effect) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  assert state.puzzle_feedback == "Correct!"
+  assert effect == Render
+}
+
+pub fn puzzle_incorrect_answer_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, effect) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Incorrect
+  assert state.puzzle_feedback == "Not the best move."
+  assert state.input_buffer == ""
+  assert effect == Render
+}
+
+pub fn puzzle_ambiguous_input_shows_error_test() {
+  // Position with two rooks that can go to b1: Ra1 and Rc1
+  let p =
+    Puzzle(
+      ..sample_puzzle(),
+      fen: "8/8/8/8/8/8/8/R1R4K w - - 0 1",
+      player_color: color.White,
+      solution_uci: "a1b1",
+    )
+  let session = puzzle.new_session([p])
+  let state = app.enter_puzzle_mode(app.from_game(sample_game()), session)
+  // Type "Rb1" — ambiguous (which rook?)
+  let #(state, _) = app.update(state, event.Char("R"))
+  let #(state, _) = app.update(state, event.Char("b"))
+  let #(state, _) = app.update(state, event.Char("1"))
+  let #(state, _) = app.update(state, event.Enter)
+  // Should show ambiguity error, not "Not the best move"
+  assert state.puzzle_phase == Solving
+  assert string.contains(state.input_error, "Ambiguous")
+}
+
+pub fn puzzle_invalid_input_shows_error_test() {
+  let state = puzzle_state()
+  // Type nonsense
+  let #(state, _) = app.update(state, event.Char("z"))
+  let #(state, _) = app.update(state, event.Char("z"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Solving
+  assert string.contains(state.input_error, "Invalid move")
+}
+
+pub fn puzzle_empty_enter_is_noop_test() {
+  let state = puzzle_state()
+  let #(_, effect) = app.update(state, event.Enter)
+  assert effect == None
+}
+
+// --- Reveal ---
+
+pub fn puzzle_r_reveals_solution_test() {
+  let state = puzzle_state()
+  let #(state, effect) = app.update(state, event.Char("r"))
+  assert state.puzzle_phase == Revealed
+  assert state.puzzle_feedback == "Best: d5 (eval +0.2)"
+  assert effect == Render
+}
+
+pub fn puzzle_r_after_correct_reveals_solution_test() {
+  let state = puzzle_state()
+  // Solve correctly
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  // Press r to see the full line
+  let #(state, effect) = app.update(state, event.Char("r"))
+  assert state.puzzle_phase == Revealed
+  assert effect == Render
+}
+
+pub fn puzzle_esc_from_revealed_resets_to_solving_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("r"))
+  assert state.puzzle_phase == Revealed
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.puzzle_phase == Solving
+  assert state.puzzle_feedback == ""
+  assert effect == Render
+}
+
+pub fn puzzle_esc_from_correct_resets_to_solving_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.puzzle_phase == Solving
+  assert state.puzzle_feedback == ""
+  assert effect == Render
+}
+
+// --- Navigation ---
+
+pub fn puzzle_n_after_correct_advances_test() {
+  let state = puzzle_state()
+  // Solve correctly then advance
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  let #(state, effect) = app.update(state, event.Char("n"))
+  assert state.puzzle_phase == Solving
+  assert state.puzzle_feedback == ""
+  assert state.input_buffer == ""
+  let assert option.Some(session) = state.puzzle_session
+  assert session.current_index == 1
+  assert effect == app.SavePuzzles
+}
+
+pub fn puzzle_n_after_reveal_advances_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("r"))
+  assert state.puzzle_phase == Revealed
+  let #(state, effect) = app.update(state, event.Char("n"))
+  assert state.puzzle_phase == Solving
+  let assert option.Some(session) = state.puzzle_session
+  assert session.current_index == 1
+  assert effect == app.SavePuzzles
+}
+
+pub fn puzzle_shift_n_goes_back_test() {
+  let state = puzzle_state()
+  // Solve and advance to puzzle 2
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  let #(state, _) = app.update(state, event.Char("n"))
+  let assert option.Some(session) = state.puzzle_session
+  assert session.current_index == 1
+  // Now go back — need to be in Correct or Revealed to use N
+  let #(state, _) = app.update(state, event.Char("r"))
+  let #(state, effect) = app.update(state, event.Char("N"))
+  let assert option.Some(session) = state.puzzle_session
+  assert session.current_index == 0
+  assert state.puzzle_phase == Solving
+  assert effect == Render
+}
+
+pub fn puzzle_n_on_last_puzzle_shows_stats_test() {
+  // Use a single-puzzle session
+  let session = puzzle.new_session([sample_puzzle()])
+  let state = app.enter_puzzle_mode(app.from_game(sample_game()), session)
+  // Solve it
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  // Press n — should show stats since it's the last puzzle
+  let #(state, effect) = app.update(state, event.Char("n"))
+  assert state.puzzle_feedback == "Done! 1/1 solved, 0 revealed"
+  assert effect == app.SavePuzzles
+}
+
+// --- Exit puzzle mode ---
+
+pub fn puzzle_esc_empty_buffer_exits_test() {
+  let state = puzzle_state()
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.mode == GameReplay
+  assert state.puzzle_session == option.None
+  assert state.puzzle_phase == Solving
+  assert effect == Render
+}
+
+pub fn puzzle_esc_with_buffer_clears_buffer_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.mode == PuzzleTraining
+  assert state.input_buffer == ""
+  assert effect == Render
+}
+
+pub fn puzzle_q_empty_buffer_exits_test() {
+  let state = puzzle_state()
+  let #(state, effect) = app.update(state, event.Char("q"))
+  assert state.mode == GameReplay
+  assert state.puzzle_session == option.None
+  assert effect == Render
+}
+
+pub fn puzzle_q_with_buffer_appends_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("N"))
+  let #(state, _) = app.update(state, event.Char("q"))
+  assert state.mode == PuzzleTraining
+  assert state.input_buffer == "Nq"
+}
+
+// --- Flip board in puzzle mode ---
+
+pub fn puzzle_f_enters_input_buffer_test() {
+  let state = puzzle_state()
+  let #(state, effect) = app.update(state, event.Char("f"))
+  assert state.input_buffer == "f"
+  assert state.from_white == False
+  assert effect == Render
+}
+
+// --- Backspace in puzzle mode ---
+
+pub fn puzzle_backspace_removes_last_char_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, effect) = app.update(state, event.Backspace)
+  assert state.input_buffer == "d"
+  assert effect == Render
 }

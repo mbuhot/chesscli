@@ -156,8 +156,8 @@ pub fn format_with_analysis_propagates_classification_test() {
     GameAnalysis(
       evaluations: [Centipawns(0), Centipawns(20), Centipawns(-200)],
       move_analyses: [
-        MoveAnalysis(0, Centipawns(0), Centipawns(20), "e2e4", Best),
-        MoveAnalysis(1, Centipawns(20), Centipawns(-200), "e7e5", Blunder),
+        MoveAnalysis(0, Centipawns(0), Centipawns(20), "e2e4", [], Best),
+        MoveAnalysis(1, Centipawns(20), Centipawns(-200), "e7e5", [], Blunder),
       ],
     )
   let entries = info_panel.format_move_list(g, option.Some(ga), option.None)
@@ -210,8 +210,8 @@ pub fn render_with_analysis_includes_color_commands_test() {
     GameAnalysis(
       evaluations: [Centipawns(0), Centipawns(20), Centipawns(-200)],
       move_analyses: [
-        MoveAnalysis(0, Centipawns(0), Centipawns(20), "e2e4", Best),
-        MoveAnalysis(1, Centipawns(20), Centipawns(-200), "e7e5", Blunder),
+        MoveAnalysis(0, Centipawns(0), Centipawns(20), "e2e4", [], Best),
+        MoveAnalysis(1, Centipawns(20), Centipawns(-200), "e7e5", [], Blunder),
       ],
     )
   let commands = info_panel.render(g, 32, 1, 10, option.Some(ga), option.None)

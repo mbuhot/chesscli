@@ -2,6 +2,7 @@
 //// All input handling is a pure update(state, key) -> #(state, effect)
 //// function, keeping side effects at the boundary in chesscli.gleam.
 
+import chesscli/chess/color
 import chesscli/chess/game.{type Game}
 import chesscli/chess/move.{type Move}
 import chesscli/engine/uci
@@ -9,6 +10,7 @@ import chesscli/chesscom/api.{
   type ApiError, type ArchivesResponse, type GameSummary, type GamesResponse,
 }
 import chesscli/engine/analysis.{type GameAnalysis}
+import chesscli/puzzle/puzzle.{type PuzzlePhase, type TrainingSession}
 import etch/event.{type KeyCode}
 import gleam/option.{type Option}
 
@@ -22,6 +24,8 @@ pub type Mode {
   MoveInput
   /// Browsing chess.com game archives.
   GameBrowser
+  /// Solving puzzles extracted from game analysis.
+  PuzzleTraining
 }
 
 /// Which sub-screen the game browser is showing.
@@ -67,6 +71,10 @@ pub type AppState {
     analysis: Option(GameAnalysis),
     analysis_progress: Option(#(Int, Int)),
     deep_analysis_index: Option(Int),
+    puzzle_session: Option(TrainingSession),
+    puzzle_phase: PuzzlePhase,
+    puzzle_feedback: String,
+    puzzle_hint_used: Bool,
   )
 }
 
@@ -80,6 +88,11 @@ pub type Effect {
   AnalyzeGame
   ContinueDeepAnalysis
   CancelDeepAnalysis
+  StartPuzzles
+  LoadCachedPuzzles
+  SavePuzzles
+  ScanForPuzzles
+  RefreshPuzzles
 }
 
 /// Create a new app state in FreePlay mode with a fresh game.
@@ -95,6 +108,10 @@ pub fn new() -> AppState {
     analysis: option.None,
     analysis_progress: option.None,
     deep_analysis_index: option.None,
+    puzzle_session: option.None,
+    puzzle_phase: puzzle.Solving,
+    puzzle_feedback: "",
+    puzzle_hint_used: False,
   )
 }
 
@@ -111,6 +128,10 @@ pub fn from_game(g: Game) -> AppState {
     analysis: option.None,
     analysis_progress: option.None,
     deep_analysis_index: option.None,
+    puzzle_session: option.None,
+    puzzle_phase: puzzle.Solving,
+    puzzle_feedback: "",
+    puzzle_hint_used: False,
   )
 }
 
@@ -122,6 +143,7 @@ pub fn update(state: AppState, key: KeyCode) -> #(AppState, Effect) {
     FreePlay -> update_free_play(state, key)
     MoveInput -> update_move_input(state, key)
     GameBrowser -> update_game_browser(state, key)
+    PuzzleTraining -> update_puzzle_training(state, key)
   }
 }
 
@@ -153,6 +175,7 @@ fn update_game_replay(state: AppState, key: KeyCode) -> #(AppState, Effect) {
     event.End -> #(AppState(..state, game: game.goto_end(state.game)), Render)
     event.Char("f") -> #(AppState(..state, from_white: !state.from_white), Render)
     event.Char("r") -> start_analysis(state)
+    event.Char("p") -> start_puzzles(state)
     event.Char("b") -> enter_browser(state)
     event.Char("q") -> #(state, Quit)
     event.Char("/") -> enter_move_input(state)
@@ -183,6 +206,291 @@ fn start_analysis(state: AppState) -> #(AppState, Effect) {
   }
 }
 
+fn start_puzzles(state: AppState) -> #(AppState, Effect) {
+  case state.analysis {
+    option.Some(_) -> #(state, StartPuzzles)
+    option.None -> #(state, LoadCachedPuzzles)
+  }
+}
+
+/// Enter puzzle training mode with a prepared session.
+/// Sets the board perspective to match the first puzzle's player color.
+pub fn enter_puzzle_mode(
+  state: AppState,
+  session: TrainingSession,
+) -> AppState {
+  let from_white = case puzzle.current_puzzle(session) {
+    option.Some(p) -> p.player_color == color.White
+    option.None -> state.from_white
+  }
+  AppState(
+    ..state,
+    mode: PuzzleTraining,
+    puzzle_session: option.Some(session),
+    puzzle_phase: puzzle.Solving,
+    puzzle_feedback: "",
+    puzzle_hint_used: False,
+    input_buffer: "",
+    input_error: "",
+    from_white: from_white,
+  )
+}
+
+fn puzzle_perspective(session: TrainingSession) -> Bool {
+  case puzzle.current_puzzle(session) {
+    option.Some(p) -> p.player_color == color.White
+    option.None -> True
+  }
+}
+
+fn update_puzzle_training(
+  state: AppState,
+  key: KeyCode,
+) -> #(AppState, Effect) {
+  let assert option.Some(session) = state.puzzle_session
+  case state.puzzle_phase {
+    puzzle.Correct | puzzle.Revealed -> update_puzzle_after_result(state, session, key)
+    _ -> update_puzzle_solving(state, session, key)
+  }
+}
+
+fn update_puzzle_solving(
+  state: AppState,
+  session: TrainingSession,
+  key: KeyCode,
+) -> #(AppState, Effect) {
+  case key {
+    event.Esc | event.Char("\u{001b}") ->
+      case state.input_buffer {
+        "" -> exit_puzzle_mode(state)
+        _ -> #(
+          AppState(..state, input_buffer: "", input_error: ""),
+          Render,
+        )
+      }
+    event.Char("q") ->
+      case state.input_buffer {
+        "" -> exit_puzzle_mode(state)
+        _ -> #(
+          AppState(..state, input_buffer: state.input_buffer <> "q"),
+          Render,
+        )
+      }
+    event.Char("h") ->
+      case state.input_buffer {
+        "" -> advance_hint(state)
+        _ -> #(
+          AppState(..state, input_buffer: state.input_buffer <> "h"),
+          Render,
+        )
+      }
+    event.Char("r") ->
+      case state.input_buffer {
+        "" -> reveal_solution(state, session)
+        _ -> #(
+          AppState(..state, input_buffer: state.input_buffer <> "r"),
+          Render,
+        )
+      }
+    event.Enter | event.Char("\r") -> check_puzzle_answer(state, session)
+    event.Backspace | event.Char("\u{007f}") -> {
+      let new_buffer = string.drop_end(state.input_buffer, 1)
+      #(AppState(..state, input_buffer: new_buffer, input_error: ""), Render)
+    }
+    event.Char(c) -> #(
+      AppState(..state, input_buffer: state.input_buffer <> c, input_error: ""),
+      Render,
+    )
+    _ -> #(state, None)
+  }
+}
+
+fn update_puzzle_after_result(
+  state: AppState,
+  session: TrainingSession,
+  key: KeyCode,
+) -> #(AppState, Effect) {
+  case key {
+    event.Char("n") | event.Char("\r") | event.Enter -> {
+      // Update solve_count: clean solve (Correct, no hints) increments, else resets
+      let clean = state.puzzle_phase == puzzle.Correct && !state.puzzle_hint_used
+      let updated_session = puzzle.update_solve_count(session, clean)
+      let new_session = puzzle.record_result(updated_session, state.puzzle_phase)
+      case puzzle.next_puzzle(new_session) {
+        Ok(s) -> #(
+          AppState(
+            ..state,
+            puzzle_session: option.Some(s),
+            puzzle_phase: puzzle.Solving,
+            puzzle_feedback: "",
+            puzzle_hint_used: False,
+            input_buffer: "",
+            input_error: "",
+            from_white: puzzle_perspective(s),
+          ),
+          SavePuzzles,
+        )
+        Error(_) -> {
+          // All puzzles done — show stats
+          let #(total, solved, revealed) = puzzle.stats(new_session)
+          let feedback =
+            "Done! "
+            <> int.to_string(solved)
+            <> "/"
+            <> int.to_string(total)
+            <> " solved, "
+            <> int.to_string(revealed)
+            <> " revealed"
+          #(
+            AppState(
+              ..state,
+              puzzle_session: option.Some(new_session),
+              puzzle_feedback: feedback,
+            ),
+            SavePuzzles,
+          )
+        }
+      }
+    }
+    event.Char("N") -> {
+      case puzzle.prev_puzzle(session) {
+        Ok(s) -> #(
+          AppState(
+            ..state,
+            puzzle_session: option.Some(s),
+            puzzle_phase: puzzle.Solving,
+            puzzle_feedback: "",
+            input_buffer: "",
+            from_white: puzzle_perspective(s),
+          ),
+          Render,
+        )
+        Error(_) -> #(state, None)
+      }
+    }
+    event.Char("r") ->
+      case state.puzzle_phase {
+        puzzle.Correct -> reveal_solution(state, session)
+        _ -> #(state, None)
+      }
+    event.Esc | event.Char("\u{001b}") -> #(
+      AppState(..state, puzzle_phase: puzzle.Solving, puzzle_feedback: "", input_buffer: ""),
+      Render,
+    )
+    event.Char("q") -> exit_puzzle_mode(state)
+    _ -> #(state, None)
+  }
+}
+
+fn advance_hint(state: AppState) -> #(AppState, Effect) {
+  let new_phase = case state.puzzle_phase {
+    puzzle.Solving | puzzle.Incorrect -> puzzle.HintPiece
+    puzzle.HintPiece -> puzzle.HintSquare
+    other -> other
+  }
+  #(AppState(..state, puzzle_phase: new_phase, puzzle_hint_used: True), Render)
+}
+
+fn reveal_solution(
+  state: AppState,
+  session: TrainingSession,
+) -> #(AppState, Effect) {
+  let assert option.Some(p) = puzzle.current_puzzle(session)
+  let solution_san = puzzle.format_uci_as_san(p.fen, p.solution_uci)
+  let feedback =
+    "Best: " <> solution_san <> " (eval " <> p.eval_before <> ")"
+  #(
+    AppState(..state, puzzle_phase: puzzle.Revealed, puzzle_feedback: feedback),
+    Render,
+  )
+}
+
+fn check_puzzle_answer(
+  state: AppState,
+  session: TrainingSession,
+) -> #(AppState, Effect) {
+  case state.input_buffer {
+    "" -> #(state, None)
+    buffer -> {
+      let assert option.Some(p) = puzzle.current_puzzle(session)
+      case parse_puzzle_input(buffer, p) {
+        Ok(uci) ->
+          case puzzle.check_move(p, uci) {
+            True -> #(
+              AppState(
+                ..state,
+                puzzle_phase: puzzle.Correct,
+                puzzle_feedback: "Correct!",
+                input_buffer: "",
+                input_error: "",
+              ),
+              Render,
+            )
+            False -> #(
+              AppState(
+                ..state,
+                puzzle_phase: puzzle.Incorrect,
+                puzzle_feedback: "Not the best move.",
+                input_buffer: "",
+                input_error: "",
+              ),
+              Render,
+            )
+          }
+        Error(err) -> #(
+          AppState(..state, input_buffer: "", input_error: err),
+          Render,
+        )
+      }
+    }
+  }
+}
+
+import chesscli/chess/fen
+
+/// Parse puzzle input as SAN then fall back to UCI. Returns the UCI string
+/// on success, or an error message describing why parsing failed.
+fn parse_puzzle_input(
+  buffer: String,
+  p: puzzle.Puzzle,
+) -> Result(String, String) {
+  case fen.parse(p.fen) {
+    Ok(pos) ->
+      case san.parse(buffer, pos) {
+        Ok(m) -> Ok(move.to_uci(m))
+        Error(san.AmbiguousMove(_)) ->
+          Error("Ambiguous: " <> buffer <> " — add file/rank to disambiguate")
+        Error(san.NoMatchingMove(_)) ->
+          // Fall back to UCI interpretation
+          case move.from_uci(buffer) {
+            Ok(_) -> Ok(buffer)
+            Error(_) -> Error("No legal move: " <> buffer)
+          }
+        Error(san.InvalidSan(_)) ->
+          case move.from_uci(buffer) {
+            Ok(_) -> Ok(buffer)
+            Error(_) -> Error("Invalid move: " <> buffer)
+          }
+      }
+    Error(_) -> Error("Invalid position")
+  }
+}
+
+fn exit_puzzle_mode(state: AppState) -> #(AppState, Effect) {
+  #(
+    AppState(
+      ..state,
+      mode: GameReplay,
+      puzzle_session: option.None,
+      puzzle_phase: puzzle.Solving,
+      puzzle_feedback: "",
+      input_buffer: "",
+      input_error: "",
+    ),
+    Render,
+  )
+}
+
 fn update_free_play(state: AppState, key: KeyCode) -> #(AppState, Effect) {
   case key {
     event.Char("u") ->
@@ -191,6 +499,7 @@ fn update_free_play(state: AppState, key: KeyCode) -> #(AppState, Effect) {
         Error(_) -> #(state, None)
       }
     event.Char("f") -> #(AppState(..state, from_white: !state.from_white), Render)
+    event.Char("p") -> #(state, LoadCachedPuzzles)
     event.Char("b") -> enter_browser(state)
     event.Char("q") -> #(state, Quit)
     event.Char("/") -> enter_move_input(state)
@@ -495,19 +804,36 @@ fn exit_browser(state: AppState) -> #(AppState, Effect) {
 }
 
 /// Store the shallow analysis result and begin deep analysis pass.
+/// Skips positions that are already settled (Best moves, overwhelming evals).
 pub fn on_analysis_result(
   state: AppState,
   result: GameAnalysis,
 ) -> #(AppState, Effect) {
-  #(
-    AppState(
-      ..state,
-      analysis: option.Some(result),
-      analysis_progress: option.None,
-      deep_analysis_index: option.Some(0),
-    ),
-    ContinueDeepAnalysis,
-  )
+  let total = list.length(result.evaluations)
+  let first_idx = next_deep_index(0, total, result)
+  case first_idx >= total {
+    True ->
+      // All positions are settled — no deep pass needed
+      #(
+        AppState(
+          ..state,
+          analysis: option.Some(result),
+          analysis_progress: option.None,
+          deep_analysis_index: option.None,
+        ),
+        Render,
+      )
+    False ->
+      #(
+        AppState(
+          ..state,
+          analysis: option.Some(result),
+          analysis_progress: option.None,
+          deep_analysis_index: option.Some(first_idx),
+        ),
+        ContinueDeepAnalysis,
+      )
+  }
 }
 
 /// Update a single position's evaluation during deep analysis.
@@ -517,6 +843,7 @@ pub fn on_deep_eval_update(
   position_index: Int,
   new_score: uci.Score,
   new_best_uci: String,
+  new_best_pv: List(String),
 ) -> #(AppState, Effect) {
   let assert option.Some(ga) = state.analysis
   let move_ucis = list.map(state.game.moves, move.to_uci)
@@ -531,12 +858,13 @@ pub fn on_deep_eval_update(
       position_index,
       new_score,
       new_best_uci,
+      new_best_pv,
       move_ucis,
       active_colors,
     )
   let total_positions = list.length(state.game.positions)
-  let next_index = position_index + 1
-  case next_index >= total_positions {
+  let next_idx = next_deep_index(position_index + 1, total_positions, updated_ga)
+  case next_idx >= total_positions {
     True -> #(
       AppState(
         ..state,
@@ -549,7 +877,7 @@ pub fn on_deep_eval_update(
       AppState(
         ..state,
         analysis: option.Some(updated_ga),
-        deep_analysis_index: option.Some(next_index),
+        deep_analysis_index: option.Some(next_idx),
       ),
       ContinueDeepAnalysis,
     )
@@ -592,6 +920,19 @@ fn api_error_to_string(err: ApiError) -> String {
   case err {
     api.HttpError(msg) -> "HTTP error: " <> msg
     api.JsonError(msg) -> "JSON error: " <> msg
+  }
+}
+
+/// Scan forward from `from` to find the next position index that should not
+/// be skipped during deep analysis. Returns `total` if all remaining are skippable.
+fn next_deep_index(from: Int, total: Int, ga: GameAnalysis) -> Int {
+  case from >= total {
+    True -> total
+    False ->
+      case analysis.should_skip_deep(from, ga) {
+        True -> next_deep_index(from + 1, total, ga)
+        False -> from
+      }
   }
 }
 
