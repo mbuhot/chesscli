@@ -2,7 +2,6 @@
 //// feedback similar to online chess platforms.
 
 import chesscli/chess/board
-import chesscli/chess/game
 import chesscli/chess/move_gen
 import chesscli/tui/app.{type AppState}
 import gleam/option.{type Option, None, Some}
@@ -38,7 +37,7 @@ pub fn determine_sound(old: AppState, new: AppState) -> Option(SoundType) {
     False -> {
       case new_idx > old_idx {
         True -> sound_for_forward(new)
-        False -> Some(MoveSound)
+        False -> sound_for_move_at(new, new_idx)
       }
     }
   }
@@ -47,33 +46,40 @@ pub fn determine_sound(old: AppState, new: AppState) -> Option(SoundType) {
 /// Determine the sound type when navigating forward (the move at new_idx - 1
 /// was just "played"). Priority: check > castle > capture > move.
 fn sound_for_forward(state: AppState) -> Option(SoundType) {
-  let move_idx = state.game.current_index - 1
+  sound_for_move_at(state, state.game.current_index - 1)
+}
+
+/// Determine the sound for the move at the given index.
+/// Examines the move itself and the resulting position (index + 1).
+fn sound_for_move_at(state: AppState, move_idx: Int) -> Option(SoundType) {
   case list_at(state.game.moves, move_idx) {
     None -> None
     Some(m) -> {
-      // Check if the resulting position has the side-to-move in check
-      let pos = game.current_position(state.game)
-      case move_gen.is_in_check(pos, pos.active_color) {
-        True -> Some(CheckSound)
-        False ->
-          case m.is_castling {
-            True -> Some(CastleSound)
-            False -> {
-              // Was there a capture? Check the position BEFORE the move
-              let prev_idx = state.game.current_index - 1
-              case list_at(state.game.positions, prev_idx) {
-                Some(prev_pos) ->
-                  case board.get(prev_pos.board, m.to) {
-                    Some(_) -> Some(CaptureSound)
-                    None ->
-                      case m.is_en_passant {
-                        True -> Some(CaptureSound)
-                        False -> Some(MoveSound)
+      // Check if the position AFTER the move has the side-to-move in check
+      case list_at(state.game.positions, move_idx + 1) {
+        None -> Some(MoveSound)
+        Some(pos_after) ->
+          case move_gen.is_in_check(pos_after, pos_after.active_color) {
+            True -> Some(CheckSound)
+            False ->
+              case m.is_castling {
+                True -> Some(CastleSound)
+                False -> {
+                  // Was there a capture? Check the position BEFORE the move
+                  case list_at(state.game.positions, move_idx) {
+                    Some(prev_pos) ->
+                      case board.get(prev_pos.board, m.to) {
+                        Some(_) -> Some(CaptureSound)
+                        None ->
+                          case m.is_en_passant {
+                            True -> Some(CaptureSound)
+                            False -> Some(MoveSound)
+                          }
                       }
+                    None -> Some(MoveSound)
                   }
-                None -> Some(MoveSound)
+                }
               }
-            }
           }
       }
     }
