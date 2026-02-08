@@ -210,13 +210,13 @@ pub fn long_game_replay_snapshot_test() {
   let result = render_long_snapshot(state)
   assert result
     == "    player2
-   ┌────────────────────────┐   3. Bb5    a6
- 8 │ ♜     ♝  ♛     ♜  ♚    │   4. Ba4    Nf6
- 7 │       ♟     ♝  ♟  ♟  ♟ │   5. O-O    Be7
- 6 │ ♟     ♞  ♟     ♞       │   6. Re1    b5
- 5 │    ♟        ♟          │   7. Bb3    d6
- 4 │             ♟          │  >8. c3     O-O
- 3 │    ♝  ♟        ♞       │   9. h3     Nb8
+   ┌────────────────────────┐    3. Bb5   a6
+ 8 │ ♜     ♝  ♛     ♜  ♚    │    4. Ba4   Nf6
+ 7 │       ♟     ♝  ♟  ♟  ♟ │    5. O-O   Be7
+ 6 │ ♟     ♞  ♟     ♞       │    6. Re1   b5
+ 5 │    ♟        ♟          │    7. Bb3   d6
+ 4 │             ♟          │  > 8. c3    O-O
+ 3 │    ♝  ♟        ♞       │    9. h3    Nb8
  2 │ ♟  ♟     ♟     ♟  ♟  ♟ │   10. d4    Nbd7
  1 │ ♜  ♞  ♝  ♛  ♜     ♚    │   11. Nbd2  Bb7
    └────────────────────────┘   12. Bc2   Re8

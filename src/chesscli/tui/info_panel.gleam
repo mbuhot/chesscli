@@ -38,6 +38,9 @@ pub fn format_move_list(
   let moves = game.moves
   let positions = game.positions
   let cursor = game.current_index
+  let total = list.length(moves)
+  let max_num = { total - 1 } / 2 + 1
+  let num_width = string.length(int.to_string(max_num))
 
   list.index_map(moves, fn(m, i) {
     let assert Ok(pos) = list_at(positions, i)
@@ -48,7 +51,11 @@ pub fn format_move_list(
     let is_analyzing = deep_analysis_index == option.Some(i)
 
     let prefix = case is_white_move {
-      True -> int.to_string(move_number) <> ". "
+      True -> {
+        let num_str = int.to_string(move_number)
+        let pad = string.repeat(" ", num_width - string.length(num_str))
+        pad <> num_str <> ". "
+      }
       False -> ""
     }
     let classification = get_classification(analysis, i)
