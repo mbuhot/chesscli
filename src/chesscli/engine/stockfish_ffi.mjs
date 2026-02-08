@@ -1,5 +1,6 @@
 import { toList } from "../../gleam.mjs";
 import { Some, None } from "../../../gleam_stdlib/gleam/option.mjs";
+import { cpus } from "os";
 
 class StockfishEngine {
   constructor(proc) {
@@ -70,6 +71,10 @@ export async function start() {
   await engine._waitFor((line) => line === "uciok");
   engine.lines = [];
 
+  const threads = Math.max(1, cpus().length - 1);
+  engine._send("setoption name Threads value " + threads);
+  engine._send("setoption name Hash value 256");
+
   engine._send("isready");
   await engine._waitFor((line) => line === "readyok");
   engine.lines = [];
@@ -107,6 +112,30 @@ export async function evaluate_incremental(engine, position_cmd, depth) {
   );
 
   return toList(lines);
+}
+
+export async function evaluate_with_go(engine, position_cmd, go_cmd) {
+  engine.lines = [];
+  engine._send(position_cmd);
+  engine._send(go_cmd);
+
+  const lines = await engine._waitFor((line) =>
+    line.startsWith("bestmove")
+  );
+
+  return toList(lines);
+}
+
+export function start_evaluation_with_go(engine, position_cmd, go_cmd) {
+  engine.lines = [];
+  engine._evalDone = false;
+  engine._evalResult = undefined;
+  engine._send(position_cmd);
+  engine._send(go_cmd);
+  engine._waitFor((line) => line.startsWith("bestmove")).then((lines) => {
+    engine._evalResult = toList(lines);
+    engine._evalDone = true;
+  });
 }
 
 export function start_evaluation(engine, position_cmd, depth) {

@@ -33,6 +33,24 @@ pub fn evaluate_incremental(
   depth: Int,
 ) -> Promise(List(String))
 
+/// Send a position and arbitrary go command, collect all output lines until "bestmove".
+@external(javascript, "./stockfish_ffi.mjs", "evaluate_with_go")
+pub fn evaluate_with_go(
+  engine: EngineProcess,
+  position_cmd: String,
+  go_cmd: String,
+) -> Promise(List(String))
+
+/// Start a non-blocking evaluation with an arbitrary go command.
+/// Returns immediately while Stockfish thinks.
+/// Use poll_result to check when the evaluation is done.
+@external(javascript, "./stockfish_ffi.mjs", "start_evaluation_with_go")
+pub fn start_evaluation_with_go(
+  engine: EngineProcess,
+  position_cmd: String,
+  go_cmd: String,
+) -> Nil
+
 /// Start a non-blocking evaluation. Returns immediately while Stockfish thinks.
 /// Use poll_result to check when the evaluation is done.
 @external(javascript, "./stockfish_ffi.mjs", "start_evaluation")

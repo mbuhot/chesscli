@@ -28,6 +28,11 @@ pub fn format_go(depth: Int) -> String {
   "go depth " <> int.to_string(depth)
 }
 
+/// Format a UCI "go movetime" command for time-bounded search.
+pub fn format_go_movetime(ms: Int) -> String {
+  "go movetime " <> int.to_string(ms)
+}
+
 /// Format a score for human-readable display (e.g. "+0.35", "-1.50", "M3", "-M2").
 pub fn format_score(score: Score) -> String {
   case score {

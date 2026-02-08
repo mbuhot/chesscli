@@ -1,4 +1,4 @@
-import chesscli/engine/uci.{type UciInfo, Centipawns, Mate, UciInfo}
+import chesscli/engine/uci.{Centipawns, Mate}
 import gleam/option
 
 // --- format_position ---
@@ -111,6 +111,16 @@ pub fn negate_score_positive_mate_test() {
 
 pub fn negate_score_negative_mate_test() {
   assert uci.negate_score(Mate(-2)) == Mate(2)
+}
+
+// --- format_go_movetime ---
+
+pub fn format_go_movetime_500_test() {
+  assert uci.format_go_movetime(500) == "go movetime 500"
+}
+
+pub fn format_go_movetime_200_test() {
+  assert uci.format_go_movetime(200) == "go movetime 200"
 }
 
 // --- format_position_with_moves ---
