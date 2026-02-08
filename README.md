@@ -2,6 +2,9 @@
 
 A terminal chess UI written in [Gleam](https://gleam.run/), targeting JavaScript with [Bun](https://bun.sh/).
 
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/076bef95-c712-4377-bd6d-6d78335d58bd" />
+
+
 ## Requirements
 
 - [Gleam](https://gleam.run/) >= 1.0
