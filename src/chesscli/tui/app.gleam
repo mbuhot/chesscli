@@ -8,11 +8,11 @@ import chesscli/chess/game.{type Game}
 import chesscli/chess/move.{type Move}
 import chesscli/chess/pgn
 import chesscli/chess/san
+import chesscli/engine/analysis.{type GameAnalysis}
 import chesscli/engine/uci
 import chesscli/chesscom/api.{
   type ApiError, type ArchivesResponse, type GameSummary, type GamesResponse,
 }
-import chesscli/engine/analysis.{type GameAnalysis}
 import chesscli/puzzle/puzzle.{type PuzzlePhase, type TrainingSession}
 import etch/event.{type KeyCode}
 import gleam/int
@@ -104,6 +104,7 @@ pub type Effect {
   SavePuzzles
   ScanForPuzzles
   RefreshPuzzles
+  EvaluatePuzzleAttempt
 }
 
 /// Create a new app state in FreePlay mode with a fresh game.
@@ -540,10 +541,17 @@ fn advance_puzzle(
   state: AppState,
   session: TrainingSession,
 ) -> #(AppState, Effect) {
-  // Update solve_count: clean solve (Correct, no hints) increments, else resets
-  let clean = state.puzzle_phase == puzzle.Correct && !state.puzzle_hint_used
-  let updated_session = puzzle.update_solve_count(session, clean)
-  let new_session = puzzle.record_result(updated_session, state.puzzle_phase)
+  // Guard: skip recording if this puzzle already has a result
+  let already_recorded =
+    list.any(session.results, fn(r) { r.0 == session.current_index })
+  let new_session = case already_recorded {
+    True -> session
+    False -> {
+      let clean = state.puzzle_phase == puzzle.Correct && !state.puzzle_hint_used
+      let updated = puzzle.update_solve_count(session, clean)
+      puzzle.record_result(updated, state.puzzle_phase)
+    }
+  }
   case puzzle.next_puzzle(new_session) {
     Ok(s) -> #(
       AppState(
@@ -605,6 +613,40 @@ fn reveal_solution(
   )
 }
 
+/// Update puzzle feedback after Stockfish evaluates an incorrect attempt.
+/// Classifies the attempted move and formats a descriptive feedback message.
+pub fn on_puzzle_attempt_evaluated(
+  state: AppState,
+  eval_after: uci.Score,
+) -> #(AppState, Effect) {
+  let assert option.Some(session) = state.puzzle_session
+  let assert option.Some(p) = puzzle.current_puzzle(session)
+  let assert option.Some(attempted_uci) = state.puzzle_attempted_uci
+  let assert Ok(eval_before) = uci.parse_score(p.eval_before)
+  let loss = analysis.eval_loss(eval_before, eval_after, p.player_color)
+  let mover_eval = analysis.mover_eval_before(eval_before, p.player_color)
+  let classification =
+    analysis.classify_move(loss, attempted_uci, p.solution_uci, mover_eval)
+  let san_str = state.puzzle_feedback
+  let feedback = format_attempt_feedback(san_str, classification)
+  #(AppState(..state, puzzle_feedback: feedback), Render)
+}
+
+fn format_attempt_feedback(
+  san: String,
+  classification: analysis.MoveClassification,
+) -> String {
+  case classification {
+    analysis.Best | analysis.Excellent ->
+      san <> " is almost as good! But not the best move."
+    analysis.Good -> san <> " is good, but not the best move."
+    analysis.Inaccuracy -> san <> " is an inaccuracy."
+    analysis.Miss -> san <> " misses an opportunity."
+    analysis.Mistake -> san <> " is a mistake."
+    analysis.Blunder -> san <> " is a blunder!"
+  }
+}
+
 fn check_puzzle_answer(
   state: AppState,
   session: TrainingSession,
@@ -633,12 +675,12 @@ fn check_puzzle_answer(
               AppState(
                 ..state,
                 puzzle_phase: puzzle.Incorrect,
-                puzzle_feedback: san_str <> " is not the best move.",
+                puzzle_feedback: san_str,
                 puzzle_attempted_uci: option.Some(uci),
                 input_buffer: "",
                 input_error: "",
               ),
-              Render,
+              EvaluatePuzzleAttempt,
             )
           }
         }

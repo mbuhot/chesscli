@@ -320,6 +320,22 @@ fn wrap_tokens(
   }
 }
 
+/// Copy solve_count from stored puzzles onto freshly detected ones.
+pub fn restore_solve_counts(
+  puzzles: List(Puzzle),
+  stored: List(Puzzle),
+) -> List(Puzzle) {
+  let lookup =
+    list.map(stored, fn(p) { #(p.fen <> "|" <> p.solution_uci, p.solve_count) })
+  list.map(puzzles, fn(p) {
+    let key = p.fen <> "|" <> p.solution_uci
+    case list.key_find(lookup, key) {
+      Ok(count) -> Puzzle(..p, solve_count: count)
+      Error(_) -> p
+    }
+  })
+}
+
 /// Merge new puzzles into an existing list, deduplicating by FEN + solution,
 /// keeping the most recent puzzles, capped at max_puzzles.
 pub fn merge_puzzles(

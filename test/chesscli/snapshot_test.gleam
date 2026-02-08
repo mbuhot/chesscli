@@ -472,6 +472,8 @@ pub fn puzzle_incorrect_then_hint_snapshot_test() {
   let #(state, _) = app.update(state, event.Char("e"))
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, _) = app.update(state, event.Enter)
+  // Simulate Stockfish evaluation returning a score that classifies as Inaccuracy
+  let #(state, _) = app.on_puzzle_attempt_evaluated(state, Centipawns(60))
   // Request hint after incorrect guess via menu
   let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("h"))
@@ -566,6 +568,120 @@ pub fn menu_overlay_snapshot_test() {
 
   [REPLAY] White | Esc: menu
 "
+}
+
+// --- Puzzle classification snapshots ---
+
+fn puzzle_incorrect_state() -> AppState {
+  let state = puzzle_snapshot_state()
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  state
+}
+
+pub fn puzzle_incorrect_good_move_snapshot_test() {
+  let state = puzzle_incorrect_state()
+  let #(state, _) = app.on_puzzle_attempt_evaluated(state, Centipawns(24))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
+    3 │                        │  e5 is good, but not the best move.
+    4 │          ♟             │
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | Esc: menu
+"
+}
+
+pub fn puzzle_incorrect_inaccuracy_snapshot_test() {
+  let state = puzzle_incorrect_state()
+  let #(state, _) = app.on_puzzle_attempt_evaluated(state, Centipawns(60))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
+    3 │                        │  e5 is an inaccuracy.
+    4 │          ♟             │
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | Esc: menu
+"
+}
+
+pub fn puzzle_incorrect_mistake_snapshot_test() {
+  let state = puzzle_incorrect_state()
+  let #(state, _) = app.on_puzzle_attempt_evaluated(state, Centipawns(170))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
+    3 │                        │  e5 is a mistake.
+    4 │          ♟             │
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | Esc: menu
+"
+}
+
+pub fn puzzle_incorrect_blunder_snapshot_test() {
+  let state = puzzle_incorrect_state()
+  let #(state, _) = app.on_puzzle_attempt_evaluated(state, Centipawns(300))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
+    3 │                        │  e5 is a blunder!
+    4 │          ♟             │
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  Black | Esc: menu
+"
+}
+
+pub fn puzzle_end_of_puzzles_idempotent_snapshot_test() {
+  let state = puzzle_snapshot_state()
+  // Solve correctly
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  // Advance → end of puzzles (single puzzle), shows Done! stats
+  let #(state, _) = app.update(state, event.Enter)
+  let result = render_puzzle_snapshot(state)
+  assert string.contains(result, "Done! 1/1 solved, 0 revealed")
+  // Press Enter again — stats should NOT inflate
+  let #(state, _) = app.update(state, event.Enter)
+  let result2 = render_puzzle_snapshot(state)
+  assert string.contains(result2, "Done! 1/1 solved, 0 revealed")
 }
 
 // --- Helpers ---

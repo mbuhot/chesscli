@@ -230,6 +230,28 @@ pub fn merge_puzzles_keeps_existing_when_full_test() {
   assert first.solution_uci == "a1"
 }
 
+// --- restore_solve_counts ---
+
+pub fn restore_solve_counts_copies_from_stored_test() {
+  let fresh = [sample_puzzle(), Puzzle(..sample_puzzle(), solution_uci: "g1f3")]
+  let stored = [
+    Puzzle(..sample_puzzle(), solve_count: 2),
+    Puzzle(..sample_puzzle(), solution_uci: "g1f3", solve_count: 1),
+  ]
+  let result = puzzle.restore_solve_counts(fresh, stored)
+  let assert [p1, p2] = result
+  assert p1.solve_count == 2
+  assert p2.solve_count == 1
+}
+
+pub fn restore_solve_counts_leaves_new_at_zero_test() {
+  let fresh = [Puzzle(..sample_puzzle(), solution_uci: "a2a4")]
+  let stored = [Puzzle(..sample_puzzle(), solve_count: 2)]
+  let result = puzzle.restore_solve_counts(fresh, stored)
+  let assert [p1] = result
+  assert p1.solve_count == 0
+}
+
 // --- update_solve_count ---
 
 pub fn update_solve_count_increments_on_clean_solve_test() {

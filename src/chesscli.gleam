@@ -379,14 +379,15 @@ fn handle_effect(
               loop(msg_state, engine)
             }
             _ -> {
-              // Save merged puzzles to cache for later, but train on current game only
+              // Save merged puzzles to cache, restore solve counts for training
               let existing = case store.read_puzzles() {
                 Some(cached) -> cached
                 None -> []
               }
               let all_puzzles = puzzle.merge_puzzles(existing, new_puzzles, 50)
               store.write_puzzles(all_puzzles)
-              let session = puzzle.new_session(puzzle.shuffle(new_puzzles))
+              let with_counts = puzzle.restore_solve_counts(new_puzzles, existing)
+              let session = puzzle.new_session(puzzle.shuffle(with_counts))
               let new_state = app.enter_puzzle_mode(state, session)
               render(new_state)
               loop(new_state, engine)
@@ -433,6 +434,30 @@ fn handle_effect(
           loop(state, engine)
         }
       }
+    }
+    app.EvaluatePuzzleAttempt -> {
+      let assert Some(session) = state.puzzle_session
+      let assert Some(p) = puzzle.current_puzzle(session)
+      let assert Some(attempted_uci) = state.puzzle_attempted_uci
+      render(state)
+      use eng <- promise.await(stockfish.start())
+      let position_cmd =
+        uci.format_position_with_moves(p.fen, [attempted_uci])
+      use lines <- promise.await(
+        stockfish.evaluate_with_go(eng, position_cmd, uci.format_go(14)),
+      )
+      stockfish.stop(eng)
+      let #(raw_eval, _, _) = parse_engine_output(lines)
+      // UCI score is from side-to-move perspective (opponent after user's move);
+      // normalize to white's perspective
+      let assert Ok(post_pos) = fen.parse(p.fen)
+      let post_active = color.opposite(post_pos.active_color)
+      let eval = case post_active {
+        color.White -> raw_eval
+        color.Black -> uci.negate_score(raw_eval)
+      }
+      let #(new_state, eff) = app.on_puzzle_attempt_evaluated(state, eval)
+      handle_effect(new_state, eff, engine)
     }
     app.ScanForPuzzles | app.RefreshPuzzles -> {
       // TODO: Implement auto-scan of chess.com games

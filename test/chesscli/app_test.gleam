@@ -11,7 +11,8 @@ import chesscli/puzzle/puzzle.{
 }
 import chesscli/tui/app.{
   type AppState, AnalyzeGame, AppState, ArchiveList,
-  CancelDeepAnalysis, ContinueDeepAnalysis, FetchArchives, FetchGames, FreePlay, GameBrowser,
+  CancelDeepAnalysis, ContinueDeepAnalysis, EvaluatePuzzleAttempt,
+  FetchArchives, FetchGames, FreePlay, GameBrowser,
   GameList, GameReplay, LoadCachedPuzzles, LoadError, LoadingArchives,
   LoadingGames, None, PuzzleTraining, Quit, Render, StartPuzzles,
   UsernameInput,
@@ -1091,17 +1092,17 @@ pub fn puzzle_correct_san_answer_test() {
   assert effect == Render
 }
 
-pub fn puzzle_incorrect_answer_test() {
+pub fn puzzle_incorrect_answer_returns_evaluate_effect_test() {
   let state = puzzle_state()
   let #(state, _) = app.update(state, event.Char("e"))
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, effect) = app.update(state, event.Enter)
   assert state.puzzle_phase == Incorrect
-  assert string.contains(state.puzzle_feedback, "e5")
-  assert string.contains(state.puzzle_feedback, "is not the best move")
+  // Feedback is just the SAN initially, pending evaluation
+  assert state.puzzle_feedback == "e5"
   assert state.puzzle_attempted_uci == option.Some("e7e5")
   assert state.input_buffer == ""
-  assert effect == Render
+  assert effect == EvaluatePuzzleAttempt
 }
 
 pub fn puzzle_ambiguous_input_shows_error_test() {
@@ -1377,4 +1378,73 @@ pub fn menu_items_puzzle_revealed_test() {
   let items = app.menu_items(state)
   let keys = list.map(items, fn(i) { i.key })
   assert keys == ["n", "N", "f", "q"]
+}
+
+// --- on_puzzle_attempt_evaluated classification tests ---
+
+fn incorrect_state() -> AppState {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  state
+}
+
+pub fn on_puzzle_attempt_evaluated_good_test() {
+  let state = incorrect_state()
+  // eval_before "+0.2" parses to Centipawns(2) = 0.02 pawns, player is Black
+  // eval_after Centipawns(24): loss = (0.24 - 0.02) = 0.22 → Good
+  let #(state, effect) =
+    app.on_puzzle_attempt_evaluated(state, Centipawns(24))
+  assert state.puzzle_feedback == "e5 is good, but not the best move."
+  assert effect == Render
+}
+
+pub fn on_puzzle_attempt_evaluated_inaccuracy_test() {
+  let state = incorrect_state()
+  // eval_after Centipawns(40): loss = (0.40 - 0.02) = 0.38 → Inaccuracy
+  let #(state, effect) =
+    app.on_puzzle_attempt_evaluated(state, Centipawns(40))
+  assert state.puzzle_feedback == "e5 is an inaccuracy."
+  assert effect == Render
+}
+
+pub fn on_puzzle_attempt_evaluated_mistake_test() {
+  let state = incorrect_state()
+  // eval_after Centipawns(170): loss = (1.70 - 0.02) = 1.68 → Mistake
+  let #(state, effect) =
+    app.on_puzzle_attempt_evaluated(state, Centipawns(170))
+  assert state.puzzle_feedback == "e5 is a mistake."
+  assert effect == Render
+}
+
+pub fn on_puzzle_attempt_evaluated_blunder_test() {
+  let state = incorrect_state()
+  // eval_after Centipawns(300): loss = (3.00 - 0.02) = 2.98 → Blunder
+  let #(state, effect) =
+    app.on_puzzle_attempt_evaluated(state, Centipawns(300))
+  assert state.puzzle_feedback == "e5 is a blunder!"
+  assert effect == Render
+}
+
+// --- Bug fix: end-of-puzzles idempotent test ---
+
+pub fn puzzle_end_repeated_enter_does_not_inflate_stats_test() {
+  // Single-puzzle session
+  let session = puzzle.new_session([sample_puzzle()])
+  let state = app.enter_puzzle_mode(app.from_game(sample_game()), session)
+  // Solve correctly
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  // First Enter → shows "Done!" stats
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_feedback == "Done! 1/1 solved, 0 revealed"
+  // Second Enter → stats should NOT change
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_feedback == "Done! 1/1 solved, 0 revealed"
+  // Third Enter → still the same
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_feedback == "Done! 1/1 solved, 0 revealed"
 }
