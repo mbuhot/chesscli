@@ -28,25 +28,13 @@ pub fn play(sound: SoundType) -> Nil {
 }
 
 /// Compare old and new app states to determine if a move occurred
-/// and what sound to play for it.
+/// and what sound to play for it. Always plays the sound for the move
+/// the cursor lands on (current_index - 1), regardless of direction.
 pub fn determine_sound(old: AppState, new: AppState) -> Option(SoundType) {
-  let old_idx = old.game.current_index
-  let new_idx = new.game.current_index
-  case old_idx == new_idx {
+  case old.game.current_index == new.game.current_index {
     True -> None
-    False -> {
-      case new_idx > old_idx {
-        True -> sound_for_forward(new)
-        False -> sound_for_move_at(new, new_idx)
-      }
-    }
+    False -> sound_for_move_at(new, new.game.current_index - 1)
   }
-}
-
-/// Determine the sound type when navigating forward (the move at new_idx - 1
-/// was just "played"). Priority: check > castle > capture > move.
-fn sound_for_forward(state: AppState) -> Option(SoundType) {
-  sound_for_move_at(state, state.game.current_index - 1)
 }
 
 /// Determine the sound for the move at the given index.
