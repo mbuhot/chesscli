@@ -1,12 +1,12 @@
 //// Mode-aware status bar displayed below the board.
-//// Shows current mode, side to move, available keybindings, and error messages.
+//// Shows current mode, side to move, input buffer, and error messages.
 
 import chesscli/chess/color
 import chesscli/chess/game
 import chesscli/engine/uci
 import chesscli/tui/app.{
   type AppState, ArchiveList, FreePlay, GameBrowser, GameList, GameReplay,
-  LoadError, LoadingArchives, LoadingGames, MoveInput, PuzzleTraining,
+  LoadError, LoadingArchives, LoadingGames, PuzzleTraining,
   UsernameInput,
 }
 import chesscli/puzzle/puzzle
@@ -30,13 +30,18 @@ pub fn format_status(state: AppState) -> String {
 }
 
 fn format_mode_status(state: AppState) -> String {
+  case state.input_buffer {
+    "" -> format_mode_label(state)
+    buffer -> "> " <> buffer <> "\u{2588}"
+  }
+}
+
+fn format_mode_label(state: AppState) -> String {
   let pos = game.current_position(state.game)
   let side = color.to_string(pos.active_color)
   case state.mode {
     GameReplay -> format_replay_status(state, side)
-    FreePlay ->
-      "[PLAY] " <> side <> " | u:undo f:flip q:quit"
-    MoveInput -> "> " <> state.input_buffer <> "\u{2588}"
+    FreePlay -> "[PLAY] " <> side <> " | Esc: menu"
     GameBrowser -> format_browser_status(state)
     PuzzleTraining -> format_puzzle_status(state)
   }
@@ -49,15 +54,9 @@ fn format_replay_status(state: AppState, side: String) -> String {
         option.Some(score) -> " | " <> uci.format_score(score)
         option.None -> ""
       }
-      "[REPLAY] "
-      <> side
-      <> eval_str
-      <> " | \u{2190}\u{2192} Home End f q"
+      "[REPLAY] " <> side <> eval_str <> " | Esc: menu"
     }
-    option.None ->
-      "[REPLAY] "
-      <> side
-      <> " | \u{2190}\u{2192} Home End f r q"
+    option.None -> "[REPLAY] " <> side <> " | Esc: menu"
   }
 }
 
@@ -97,9 +96,9 @@ fn format_puzzle_status(state: AppState) -> String {
         option.Some(p) -> color.to_string(p.player_color)
         option.None -> ""
       }
-      color_str <> " | h:hint r:reveal n:next Esc:back q:quit"
+      color_str <> " | Esc: menu"
     }
-    option.None -> "h:hint r:reveal n:next q:quit"
+    option.None -> "Esc: menu"
   }
 }
 

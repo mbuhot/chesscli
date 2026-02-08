@@ -10,10 +10,10 @@ import chesscli/puzzle/puzzle.{
   Solving,
 }
 import chesscli/tui/app.{
-  type AppState, AnalyzeGame, AppState, ArchiveList, CancelDeepAnalysis,
-  ContinueDeepAnalysis, FetchArchives, FetchGames, FreePlay, GameBrowser,
+  type AppState, AnalyzeGame, AppState, ArchiveList,
+  CancelDeepAnalysis, ContinueDeepAnalysis, FetchArchives, FetchGames, FreePlay, GameBrowser,
   GameList, GameReplay, LoadCachedPuzzles, LoadError, LoadingArchives,
-  LoadingGames, MoveInput, None, PuzzleTraining, Quit, Render, StartPuzzles,
+  LoadingGames, None, PuzzleTraining, Quit, Render, StartPuzzles,
   UsernameInput,
 }
 import etch/event
@@ -36,6 +36,13 @@ fn long_game() -> game.Game {
   game.from_pgn(pgn_game)
 }
 
+/// Open menu then press a key to execute a command.
+fn menu_command(state: AppState, key: String) -> #(AppState, app.Effect) {
+  let #(state, _) = app.update(state, event.Esc)
+  assert state.menu_open == True
+  app.update(state, event.Char(key))
+}
+
 // --- Constructor tests ---
 
 pub fn new_creates_free_play_test() {
@@ -44,6 +51,7 @@ pub fn new_creates_free_play_test() {
   assert state.from_white == True
   assert state.input_buffer == ""
   assert state.input_error == ""
+  assert state.menu_open == False
   assert state.game.current_index == 0
 }
 
@@ -51,6 +59,7 @@ pub fn from_game_creates_game_replay_test() {
   let state = app.from_game(sample_game())
   assert state.mode == GameReplay
   assert state.from_white == True
+  assert state.menu_open == False
   assert state.game.current_index == 0
   assert list.length(state.game.moves) == 4
 }
@@ -135,99 +144,95 @@ pub fn replay_page_up_clamps_to_start_test() {
   assert effect == Render
 }
 
-// --- GameReplay: flip, quit, move input ---
+// --- Menu: open, close, commands ---
 
-pub fn replay_f_flips_board_test() {
+pub fn escape_opens_menu_test() {
   let state = app.from_game(sample_game())
-  assert state.from_white == True
-  let #(state, effect) = app.update(state, event.Char("f"))
-  assert state.from_white == False
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.menu_open == True
   assert effect == Render
 }
 
-pub fn replay_q_quits_test() {
+pub fn escape_closes_menu_test() {
+  let state = AppState(..app.from_game(sample_game()), menu_open: True)
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.menu_open == False
+  assert effect == Render
+}
+
+pub fn escape_with_buffer_clears_buffer_test() {
   let state = app.from_game(sample_game())
-  let #(_, effect) = app.update(state, event.Char("q"))
+  let #(state, _) = app.update(state, event.Char("e"))
+  assert state.input_buffer == "e"
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.input_buffer == ""
+  assert state.menu_open == False
+  assert effect == Render
+}
+
+pub fn menu_f_flips_board_test() {
+  let state = app.from_game(sample_game())
+  assert state.from_white == True
+  let #(state, effect) = menu_command(state, "f")
+  assert state.from_white == False
+  assert state.menu_open == False
+  assert effect == Render
+}
+
+pub fn menu_q_quits_test() {
+  let state = app.from_game(sample_game())
+  let #(_, effect) = menu_command(state, "q")
   assert effect == Quit
 }
 
-pub fn replay_typing_auto_enters_move_input_test() {
-  let state = app.from_game(sample_game())
-  let #(state, effect) = app.update(state, event.Char("e"))
-  assert state.mode == MoveInput
-  assert state.input_buffer == "e"
-  assert effect == Render
-}
-
-pub fn replay_unknown_key_is_none_test() {
-  let state = app.from_game(sample_game())
-  let #(_, effect) = app.update(state, event.Char("x"))
+pub fn menu_unknown_key_does_nothing_test() {
+  let state = AppState(..app.from_game(sample_game()), menu_open: True)
+  let #(state, effect) = app.update(state, event.Char("x"))
+  assert state.menu_open == True
   assert effect == None
 }
 
-pub fn replay_piece_char_auto_enters_move_input_test() {
+// --- Direct input: buffer manipulation ---
+
+pub fn typing_appends_to_buffer_test() {
   let state = app.from_game(sample_game())
-  let #(state, effect) = app.update(state, event.Char("N"))
-  assert state.mode == MoveInput
-  assert state.input_buffer == "N"
-  assert effect == Render
-}
-
-// --- MoveInput: buffer manipulation ---
-
-pub fn input_char_appends_to_buffer_test() {
-  let state = AppState(..app.new(), mode: MoveInput)
   let #(state, effect) = app.update(state, event.Char("e"))
   assert state.input_buffer == "e"
+  assert state.mode == GameReplay
   assert effect == Render
   let #(state, _) = app.update(state, event.Char("4"))
   assert state.input_buffer == "e4"
 }
 
-pub fn input_backspace_removes_last_char_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "e4")
+pub fn backspace_removes_last_char_test() {
+  let state = app.from_game(sample_game())
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("4"))
   let #(state, effect) = app.update(state, event.Backspace)
   assert state.input_buffer == "e"
   assert effect == Render
 }
 
-pub fn input_backspace_on_empty_buffer_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "")
+pub fn backspace_on_empty_buffer_test() {
+  let state = app.from_game(sample_game())
   let #(state, effect) = app.update(state, event.Backspace)
   assert state.input_buffer == ""
   assert effect == Render
 }
 
-pub fn input_char_clears_error_test() {
+pub fn typing_clears_error_test() {
   let state =
-    AppState(..app.new(), mode: MoveInput, input_error: "Invalid: xyz")
+    AppState(..app.from_game(sample_game()), input_error: "Invalid: xyz")
   let #(state, _) = app.update(state, event.Char("e"))
   assert state.input_error == ""
 }
 
-// --- MoveInput: escape ---
+// --- Move input: enter submits ---
 
-pub fn input_escape_returns_to_free_play_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "e4")
-  let #(state, effect) = app.update(state, event.Esc)
-  assert state.mode == FreePlay
-  assert state.input_buffer == ""
-  assert effect == Render
-}
-
-pub fn input_escape_from_replay_returns_to_replay_test() {
-  let state = app.from_game(sample_game())
-  // Enter move input from GameReplay by typing a SAN char
+pub fn enter_valid_move_applies_test() {
+  let state = app.new()
   let #(state, _) = app.update(state, event.Char("e"))
-  assert state.mode == MoveInput
-  let #(state, _) = app.update(state, event.Esc)
-  assert state.mode == GameReplay
-}
-
-// --- MoveInput: enter with valid move ---
-
-pub fn input_enter_valid_move_applies_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "e4")
+  let #(state, _) = app.update(state, event.Char("4"))
   let #(state, effect) = app.update(state, event.Enter)
   assert state.mode == FreePlay
   assert state.game.current_index == 1
@@ -236,23 +241,24 @@ pub fn input_enter_valid_move_applies_test() {
   assert effect == Render
 }
 
-pub fn input_enter_invalid_move_shows_error_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "xyz")
+pub fn enter_invalid_move_shows_error_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("x"))
+  let #(state, _) = app.update(state, event.Char("y"))
+  let #(state, _) = app.update(state, event.Char("z"))
   let #(state, effect) = app.update(state, event.Enter)
-  assert state.mode == MoveInput
+  assert state.mode == FreePlay
   assert state.input_error == "Invalid: xyz"
   assert effect == Render
 }
 
-pub fn input_enter_from_replay_mid_game_test() {
+pub fn enter_from_replay_mid_game_test() {
   // From GameReplay at move 2 (after e4 e5), type Nf3 — should become FreePlay
   let state = app.from_game(sample_game())
   let #(state, _) = app.update(state, event.RightArrow)
   let #(state, _) = app.update(state, event.RightArrow)
-  // Now at index 2 (after 1. e4 e5), typing "N" auto-enters MoveInput
+  // Now at index 2, type "Nf3"
   let #(state, _) = app.update(state, event.Char("N"))
-  assert state.mode == MoveInput
-  assert state.input_buffer == "N"
   let #(state, _) = app.update(state, event.Char("f"))
   let #(state, _) = app.update(state, event.Char("3"))
   let #(state, effect) = app.update(state, event.Enter)
@@ -261,58 +267,64 @@ pub fn input_enter_from_replay_mid_game_test() {
   assert effect == Render
 }
 
-// --- FreePlay: undo, flip, quit ---
-
-pub fn free_play_undo_goes_back_test() {
+pub fn enter_empty_buffer_is_noop_test() {
   let state = app.new()
-  // Make a move first via MoveInput
-  let state = AppState(..state, mode: MoveInput, input_buffer: "e4")
+  let #(_, effect) = app.update(state, event.Enter)
+  assert effect == None
+}
+
+// --- FreePlay: menu commands ---
+
+pub fn free_play_menu_undo_goes_back_test() {
+  let state = app.new()
+  // Make a move first
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("4"))
   let #(state, _) = app.update(state, event.Enter)
   assert state.game.current_index == 1
-  // Now undo
-  let #(state, effect) = app.update(state, event.Char("u"))
+  // Now undo via menu
+  let #(state, effect) = menu_command(state, "u")
   assert state.game.current_index == 0
   assert effect == Render
 }
 
-pub fn free_play_undo_at_start_is_none_test() {
+pub fn free_play_menu_undo_at_start_is_none_test() {
   let state = app.new()
-  let #(_, effect) = app.update(state, event.Char("u"))
+  let #(_, effect) = menu_command(state, "u")
   assert effect == None
 }
 
-pub fn free_play_f_flips_board_test() {
+pub fn free_play_menu_f_flips_board_test() {
   let state = app.new()
-  let #(state, effect) = app.update(state, event.Char("f"))
+  let #(state, effect) = menu_command(state, "f")
   assert state.from_white == False
   assert effect == Render
 }
 
-pub fn free_play_q_quits_test() {
+pub fn free_play_menu_q_quits_test() {
   let state = app.new()
-  let #(_, effect) = app.update(state, event.Char("q"))
+  let #(_, effect) = menu_command(state, "q")
   assert effect == Quit
 }
 
-pub fn free_play_p_loads_cached_puzzles_test() {
+pub fn free_play_menu_p_loads_cached_puzzles_test() {
   let state = app.new()
-  let #(_, effect) = app.update(state, event.Char("p"))
+  let #(_, effect) = menu_command(state, "p")
   assert effect == LoadCachedPuzzles
 }
 
-pub fn free_play_typing_auto_enters_move_input_test() {
+pub fn free_play_typing_stays_in_mode_test() {
   let state = app.new()
   let #(state, effect) = app.update(state, event.Char("d"))
-  assert state.mode == MoveInput
+  assert state.mode == FreePlay
   assert state.input_buffer == "d"
   assert effect == Render
 }
 
 pub fn free_play_full_move_input_flow_test() {
-  // Type d4 directly in FreePlay — should auto-enter MoveInput and apply
+  // Type d4 directly in FreePlay — stays in FreePlay, Enter applies
   let state = app.new()
   let #(state, _) = app.update(state, event.Char("d"))
-  assert state.mode == MoveInput
   let #(state, _) = app.update(state, event.Char("4"))
   assert state.input_buffer == "d4"
   let #(state, effect) = app.update(state, event.Enter)
@@ -321,28 +333,40 @@ pub fn free_play_full_move_input_flow_test() {
   assert effect == Render
 }
 
-// --- MoveInput: raw key codes from JS target ---
+// --- Raw key codes from JS target ---
 // Etch on JS sends Enter as Char("\r"), Esc as Char("\u{001b}"),
 // and Backspace as Char("\u{007f}") instead of the named KeyCode variants.
 
-pub fn input_carriage_return_submits_move_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "e4")
+pub fn carriage_return_submits_move_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("4"))
   let #(state, effect) = app.update(state, event.Char("\r"))
   assert state.mode == FreePlay
   assert state.game.current_index == 1
   assert effect == Render
 }
 
-pub fn input_escape_char_cancels_input_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "e4")
+pub fn escape_char_clears_buffer_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("4"))
   let #(state, effect) = app.update(state, event.Char("\u{001b}"))
-  assert state.mode == FreePlay
   assert state.input_buffer == ""
   assert effect == Render
 }
 
-pub fn input_delete_char_removes_last_char_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "e4")
+pub fn escape_char_opens_menu_when_empty_test() {
+  let state = app.new()
+  let #(state, effect) = app.update(state, event.Char("\u{001b}"))
+  assert state.menu_open == True
+  assert effect == Render
+}
+
+pub fn delete_char_removes_last_char_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("4"))
   let #(state, effect) = app.update(state, event.Char("\u{007f}"))
   assert state.input_buffer == "e"
   assert effect == Render
@@ -376,37 +400,38 @@ pub fn last_move_after_second_move_test() {
 
 pub fn last_move_in_free_play_after_move_test() {
   let state = app.new()
-  let state = AppState(..state, mode: MoveInput, input_buffer: "e4")
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("4"))
   let #(state, _) = app.update(state, event.Enter)
   let assert option.Some(m) = app.last_move(state)
   assert m.from == square.e2
   assert m.to == square.e4
 }
 
-// --- GameBrowser: entering ---
+// --- GameBrowser: entering via menu ---
 
-pub fn replay_b_enters_browser_test() {
+pub fn replay_menu_b_enters_browser_test() {
   let state = app.from_game(sample_game())
-  let #(state, effect) = app.update(state, event.Char("b"))
+  let #(state, effect) = menu_command(state, "b")
   assert state.mode == GameBrowser
   let assert option.Some(browser) = state.browser
   assert browser.phase == UsernameInput
   assert effect == Render
 }
 
-pub fn freeplay_b_enters_browser_test() {
+pub fn freeplay_menu_b_enters_browser_test() {
   let state = app.new()
-  let #(state, effect) = app.update(state, event.Char("b"))
+  let #(state, effect) = menu_command(state, "b")
   assert state.mode == GameBrowser
   let assert option.Some(browser) = state.browser
   assert browser.phase == UsernameInput
   assert effect == Render
 }
 
-pub fn b_with_saved_username_skips_to_fetch_test() {
+pub fn menu_b_with_saved_username_skips_to_fetch_test() {
   let state =
     app.AppState(..app.new(), last_username: option.Some("hikaru"))
-  let #(state, effect) = app.update(state, event.Char("b"))
+  let #(state, effect) = menu_command(state, "b")
   assert state.mode == GameBrowser
   let assert option.Some(browser) = state.browser
   assert browser.phase == LoadingArchives
@@ -417,7 +442,7 @@ pub fn b_with_saved_username_skips_to_fetch_test() {
 
 pub fn username_submit_saves_last_username_test() {
   let state = app.new()
-  let #(state, _) = app.update(state, event.Char("b"))
+  let #(state, _) = menu_command(state, "b")
   let #(state, _) = app.update(state, event.Char("h"))
   let #(state, _) = app.update(state, event.Char("i"))
   let #(state, _) = app.update(state, event.Enter)
@@ -428,7 +453,7 @@ pub fn username_submit_saves_last_username_test() {
 
 fn browser_state() -> AppState {
   let state = app.new()
-  let #(state, _) = app.update(state, event.Char("b"))
+  let #(state, _) = menu_command(state, "b")
   state
 }
 
@@ -750,26 +775,26 @@ pub fn load_error_q_exits_browser_test() {
   assert effect == Render
 }
 
-// --- Analysis: 'r' key starts analysis ---
+// --- Analysis: 'a' menu command starts analysis ---
 
-pub fn replay_r_starts_analysis_test() {
+pub fn replay_menu_a_starts_analysis_test() {
   let state = app.from_game(sample_game())
-  let #(state, effect) = app.update(state, event.Char("r"))
+  let #(state, effect) = menu_command(state, "a")
   assert effect == AnalyzeGame
   assert state.analysis_progress == option.Some(#(0, 4))
 }
 
-pub fn replay_r_on_empty_game_is_noop_test() {
-  // FreePlay with no moves — r should do nothing
+pub fn replay_menu_a_on_empty_game_is_noop_test() {
+  // FreePlay with no moves — a should do nothing
   let state = app.new()
   let state = AppState(..state, mode: GameReplay)
-  let #(_, effect) = app.update(state, event.Char("r"))
+  let #(_, effect) = menu_command(state, "a")
   assert effect == None
 }
 
 pub fn on_analysis_result_starts_deep_analysis_test() {
   let state = app.from_game(sample_game())
-  let #(state, _) = app.update(state, event.Char("r"))
+  let #(state, _) = menu_command(state, "a")
   // Build analysis with a non-Best move so deep pass is triggered
   let ga =
     analysis.build_game_analysis(
@@ -879,7 +904,7 @@ pub fn new_game_clears_deep_analysis_index_test() {
 
 pub fn on_analysis_result_all_best_skips_deep_pass_test() {
   let state = app.from_game(sample_game())
-  let #(state, _) = app.update(state, event.Char("r"))
+  let #(state, _) = menu_command(state, "a")
   // Build analysis where all moves are Best
   let evals = [Centipawns(0), Centipawns(20), Centipawns(10), Centipawns(30), Centipawns(15)]
   let move_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
@@ -895,7 +920,7 @@ pub fn on_analysis_result_all_best_skips_deep_pass_test() {
 
 pub fn on_analysis_result_with_blunder_starts_deep_test() {
   let state = app.from_game(sample_game())
-  let #(state, _) = app.update(state, event.Char("r"))
+  let #(state, _) = menu_command(state, "a")
   // Build analysis where move 0 is a Blunder (played e2e4, best d2d4, large eval swing)
   let evals = [Centipawns(100), Centipawns(-200), Centipawns(-180), Centipawns(-150), Centipawns(-170)]
   let move_ucis = ["e2e4", "e7e5", "g1f3", "b8c6"]
@@ -938,7 +963,14 @@ pub fn on_deep_eval_update_skips_settled_positions_test() {
 pub fn restart_analysis_during_deep_cancels_test() {
   let state = analyzed_state()
   let state = AppState(..state, deep_analysis_index: option.Some(3))
-  let #(state, effect) = app.update(state, event.Char("r"))
+  // Open menu and press 'a' — but analysis already exists, so 'a' isn't in menu
+  // Need to clear analysis first, or use the cancel path
+  // Actually: with existing analysis, the menu doesn't show 'a'
+  // The cancel path is triggered when deep_analysis_index is Some and start_analysis is called
+  // This can only happen if we directly call start_analysis, e.g. from menu when analysis is None
+  // Let's test the cancel by clearing analysis and re-triggering
+  let state = AppState(..state, analysis: option.None, deep_analysis_index: option.Some(3))
+  let #(state, effect) = menu_command(state, "a")
   assert effect == CancelDeepAnalysis
   assert state.deep_analysis_index == option.None
   assert state.analysis_progress == option.Some(#(0, 4))
@@ -979,18 +1011,18 @@ fn puzzle_state() -> AppState {
 
 // --- Mode transitions ---
 
-pub fn replay_p_with_analysis_starts_puzzles_test() {
+pub fn replay_menu_p_with_analysis_starts_puzzles_test() {
   let state = app.from_game(sample_game())
   let ga =
     analysis.GameAnalysis(evaluations: [Centipawns(0)], move_analyses: [])
   let state = AppState(..state, analysis: option.Some(ga))
-  let #(_, effect) = app.update(state, event.Char("p"))
+  let #(_, effect) = menu_command(state, "p")
   assert effect == StartPuzzles
 }
 
-pub fn replay_p_without_analysis_loads_cached_test() {
+pub fn replay_menu_p_without_analysis_loads_cached_test() {
   let state = app.from_game(sample_game())
-  let #(_, effect) = app.update(state, event.Char("p"))
+  let #(_, effect) = menu_command(state, "p")
   assert effect == LoadCachedPuzzles
 }
 
@@ -1000,31 +1032,32 @@ pub fn enter_puzzle_mode_sets_state_test() {
   assert state.puzzle_phase == Solving
   assert state.puzzle_feedback == ""
   assert state.input_buffer == ""
+  assert state.menu_open == False
   assert option.is_some(state.puzzle_session)
 }
 
-// --- Hint progression ---
+// --- Hint progression via menu ---
 
-pub fn puzzle_h_advances_to_hint_piece_test() {
+pub fn puzzle_menu_h_advances_to_hint_piece_test() {
   let state = puzzle_state()
-  let #(state, effect) = app.update(state, event.Char("h"))
+  let #(state, effect) = menu_command(state, "h")
   assert state.puzzle_phase == HintPiece
   assert effect == Render
 }
 
-pub fn puzzle_h_advances_to_hint_square_test() {
+pub fn puzzle_menu_h_advances_to_hint_square_test() {
   let state = puzzle_state()
-  let #(state, _) = app.update(state, event.Char("h"))
-  let #(state, effect) = app.update(state, event.Char("h"))
+  let #(state, _) = menu_command(state, "h")
+  let #(state, effect) = menu_command(state, "h")
   assert state.puzzle_phase == HintSquare
   assert effect == Render
 }
 
-pub fn puzzle_h_no_further_than_hint_square_test() {
+pub fn puzzle_menu_h_no_further_than_hint_square_test() {
   let state = puzzle_state()
-  let #(state, _) = app.update(state, event.Char("h"))
-  let #(state, _) = app.update(state, event.Char("h"))
-  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = menu_command(state, "h")
+  let #(state, _) = menu_command(state, "h")
+  let #(state, _) = menu_command(state, "h")
   assert state.puzzle_phase == HintSquare
 }
 
@@ -1108,88 +1141,109 @@ pub fn puzzle_empty_enter_is_noop_test() {
   assert effect == None
 }
 
-// --- Slash input mode ---
+// --- Direct input in puzzle mode (all chars go to buffer) ---
 
-pub fn puzzle_slash_enables_h_file_input_test() {
+pub fn puzzle_h_goes_to_buffer_test() {
   let state = puzzle_state()
-  // Without slash, 'h' triggers hint
-  let #(hint_state, _) = app.update(state, event.Char("h"))
-  assert hint_state.puzzle_phase == HintPiece
-  // With slash, 'h' is captured as input
-  let #(state, _) = app.update(state, event.Char("/"))
   let #(state, _) = app.update(state, event.Char("h"))
-  let #(state, _) = app.update(state, event.Char("4"))
+  assert state.input_buffer == "h"
   assert state.puzzle_phase == Solving
-  assert string.contains(state.input_buffer, "h4")
 }
 
-pub fn puzzle_slash_then_enter_parses_move_test() {
+pub fn puzzle_b_file_input_works_directly_test() {
   let state = puzzle_state()
-  let #(state, _) = app.update(state, event.Char("/"))
+  let #(state, _) = app.update(state, event.Char("b"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  assert state.input_buffer == "b5"
+  assert state.puzzle_phase == Solving
+}
+
+pub fn puzzle_q_goes_to_buffer_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("Q"))
   let #(state, _) = app.update(state, event.Char("d"))
   let #(state, _) = app.update(state, event.Char("5"))
-  let #(state, _) = app.update(state, event.Enter)
-  assert state.puzzle_phase == Correct
+  assert state.input_buffer == "Qd5"
 }
 
-// --- Reveal ---
+// --- Reveal via menu ---
 
-pub fn puzzle_r_reveals_solution_test() {
+pub fn puzzle_menu_r_reveals_solution_test() {
   let state = puzzle_state()
-  let #(state, effect) = app.update(state, event.Char("r"))
+  let #(state, effect) = menu_command(state, "r")
   assert state.puzzle_phase == Revealed
   assert state.puzzle_feedback == "Best: d5 (eval +0.2)"
   assert effect == Render
 }
 
-pub fn puzzle_r_after_correct_reveals_solution_test() {
+pub fn puzzle_menu_r_after_correct_reveals_solution_test() {
   let state = puzzle_state()
   // Solve correctly
   let #(state, _) = app.update(state, event.Char("d"))
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, _) = app.update(state, event.Enter)
   assert state.puzzle_phase == Correct
-  // Press r to see the full line
-  let #(state, effect) = app.update(state, event.Char("r"))
+  // Press menu r to see the full line
+  let #(state, effect) = menu_command(state, "r")
   assert state.puzzle_phase == Revealed
   assert effect == Render
 }
 
-pub fn puzzle_esc_from_revealed_resets_to_solving_test() {
+// --- Puzzle escape behavior ---
+
+pub fn puzzle_esc_empty_buffer_opens_menu_test() {
   let state = puzzle_state()
-  let #(state, _) = app.update(state, event.Char("r"))
-  assert state.puzzle_phase == Revealed
   let #(state, effect) = app.update(state, event.Esc)
-  assert state.puzzle_phase == Solving
-  assert state.puzzle_feedback == ""
+  assert state.menu_open == True
+  assert state.mode == PuzzleTraining
   assert effect == Render
 }
 
-pub fn puzzle_esc_from_correct_resets_to_solving_test() {
+pub fn puzzle_esc_with_buffer_clears_buffer_test() {
   let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.mode == PuzzleTraining
+  assert state.input_buffer == ""
+  assert state.menu_open == False
+  assert effect == Render
+}
+
+pub fn puzzle_menu_q_exits_puzzle_mode_test() {
+  let state = puzzle_state()
+  let #(state, effect) = menu_command(state, "q")
+  assert state.mode == GameReplay
+  assert state.puzzle_session == option.None
+  assert effect == Render
+}
+
+// --- Navigation via menu ---
+
+pub fn puzzle_menu_n_after_correct_advances_test() {
+  let state = puzzle_state()
+  // Solve correctly then advance via menu
   let #(state, _) = app.update(state, event.Char("d"))
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, _) = app.update(state, event.Enter)
   assert state.puzzle_phase == Correct
-  let #(state, effect) = app.update(state, event.Esc)
-  assert state.puzzle_phase == Solving
-  assert state.puzzle_feedback == ""
-  assert effect == Render
-}
-
-// --- Navigation ---
-
-pub fn puzzle_n_after_correct_advances_test() {
-  let state = puzzle_state()
-  // Solve correctly then advance
-  let #(state, _) = app.update(state, event.Char("d"))
-  let #(state, _) = app.update(state, event.Char("5"))
-  let #(state, _) = app.update(state, event.Enter)
-  assert state.puzzle_phase == Correct
-  let #(state, effect) = app.update(state, event.Char("n"))
+  let #(state, effect) = menu_command(state, "n")
   assert state.puzzle_phase == Solving
   assert state.puzzle_feedback == ""
   assert state.input_buffer == ""
+  let assert option.Some(session) = state.puzzle_session
+  assert session.current_index == 1
+  assert effect == app.SavePuzzles
+}
+
+pub fn puzzle_enter_after_correct_advances_test() {
+  let state = puzzle_state()
+  // Solve correctly then advance via Enter
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  let #(state, effect) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Solving
   let assert option.Some(session) = state.puzzle_session
   assert session.current_index == 1
   assert effect == app.SavePuzzles
@@ -1201,33 +1255,33 @@ pub fn puzzle_n_clears_attempted_uci_test() {
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, _) = app.update(state, event.Enter)
   assert state.puzzle_attempted_uci == option.Some("d7d5")
-  let #(state, _) = app.update(state, event.Char("n"))
+  let #(state, _) = app.update(state, event.Enter)
   assert state.puzzle_attempted_uci == option.None
 }
 
-pub fn puzzle_n_after_reveal_advances_test() {
+pub fn puzzle_menu_n_after_reveal_advances_test() {
   let state = puzzle_state()
-  let #(state, _) = app.update(state, event.Char("r"))
+  let #(state, _) = menu_command(state, "r")
   assert state.puzzle_phase == Revealed
-  let #(state, effect) = app.update(state, event.Char("n"))
+  let #(state, effect) = menu_command(state, "n")
   assert state.puzzle_phase == Solving
   let assert option.Some(session) = state.puzzle_session
   assert session.current_index == 1
   assert effect == app.SavePuzzles
 }
 
-pub fn puzzle_shift_n_goes_back_test() {
+pub fn puzzle_menu_shift_n_goes_back_test() {
   let state = puzzle_state()
   // Solve and advance to puzzle 2
   let #(state, _) = app.update(state, event.Char("d"))
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, _) = app.update(state, event.Enter)
-  let #(state, _) = app.update(state, event.Char("n"))
+  let #(state, _) = app.update(state, event.Enter)
   let assert option.Some(session) = state.puzzle_session
   assert session.current_index == 1
   // Now go back — need to be in Correct or Revealed to use N
-  let #(state, _) = app.update(state, event.Char("r"))
-  let #(state, effect) = app.update(state, event.Char("N"))
+  let #(state, _) = menu_command(state, "r")
+  let #(state, effect) = menu_command(state, "N")
   let assert option.Some(session) = state.puzzle_session
   assert session.current_index == 0
   assert state.puzzle_phase == Solving
@@ -1243,55 +1297,20 @@ pub fn puzzle_n_on_last_puzzle_shows_stats_test() {
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, _) = app.update(state, event.Enter)
   assert state.puzzle_phase == Correct
-  // Press n — should show stats since it's the last puzzle
-  let #(state, effect) = app.update(state, event.Char("n"))
+  // Press Enter to advance — should show stats since it's the last puzzle
+  let #(state, effect) = app.update(state, event.Enter)
   assert state.puzzle_feedback == "Done! 1/1 solved, 0 revealed"
   assert effect == app.SavePuzzles
 }
 
-// --- Exit puzzle mode ---
+// --- Flip board via menu in puzzle mode ---
 
-pub fn puzzle_esc_empty_buffer_exits_test() {
+pub fn puzzle_menu_f_flips_board_test() {
   let state = puzzle_state()
-  let #(state, effect) = app.update(state, event.Esc)
-  assert state.mode == GameReplay
-  assert state.puzzle_session == option.None
-  assert state.puzzle_phase == Solving
-  assert effect == Render
-}
-
-pub fn puzzle_esc_with_buffer_clears_buffer_test() {
-  let state = puzzle_state()
-  let #(state, _) = app.update(state, event.Char("d"))
-  let #(state, effect) = app.update(state, event.Esc)
-  assert state.mode == PuzzleTraining
-  assert state.input_buffer == ""
-  assert effect == Render
-}
-
-pub fn puzzle_q_empty_buffer_exits_test() {
-  let state = puzzle_state()
-  let #(state, effect) = app.update(state, event.Char("q"))
-  assert state.mode == GameReplay
-  assert state.puzzle_session == option.None
-  assert effect == Render
-}
-
-pub fn puzzle_q_with_buffer_appends_test() {
-  let state = puzzle_state()
-  let #(state, _) = app.update(state, event.Char("N"))
-  let #(state, _) = app.update(state, event.Char("q"))
-  assert state.mode == PuzzleTraining
-  assert state.input_buffer == "Nq"
-}
-
-// --- Flip board in puzzle mode ---
-
-pub fn puzzle_f_enters_input_buffer_test() {
-  let state = puzzle_state()
-  let #(state, effect) = app.update(state, event.Char("f"))
-  assert state.input_buffer == "f"
+  // Board starts from black perspective (puzzle player_color is Black)
   assert state.from_white == False
+  let #(state, effect) = menu_command(state, "f")
+  assert state.from_white == True
   assert effect == Render
 }
 
@@ -1304,4 +1323,58 @@ pub fn puzzle_backspace_removes_last_char_test() {
   let #(state, effect) = app.update(state, event.Backspace)
   assert state.input_buffer == "d"
   assert effect == Render
+}
+
+// --- Menu items tests ---
+
+pub fn menu_items_replay_no_analysis_test() {
+  let state = app.from_game(sample_game())
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert keys == ["f", "a", "p", "b", "q"]
+}
+
+pub fn menu_items_replay_with_analysis_test() {
+  let state = app.from_game(sample_game())
+  let ga =
+    analysis.GameAnalysis(evaluations: [Centipawns(0)], move_analyses: [])
+  let state = AppState(..state, analysis: option.Some(ga))
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  // 'a' should not appear when analysis exists
+  assert keys == ["f", "p", "b", "q"]
+}
+
+pub fn menu_items_free_play_test() {
+  let state = app.new()
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert keys == ["f", "u", "p", "b", "q"]
+}
+
+pub fn menu_items_puzzle_solving_test() {
+  let state = puzzle_state()
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert keys == ["h", "r", "f", "q"]
+}
+
+pub fn menu_items_puzzle_correct_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert keys == ["n", "N", "r", "f", "q"]
+}
+
+pub fn menu_items_puzzle_revealed_test() {
+  let state = puzzle_state()
+  let #(state, _) = menu_command(state, "r")
+  assert state.puzzle_phase == Revealed
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert keys == ["n", "N", "f", "q"]
 }

@@ -19,6 +19,7 @@ import chesscli/tui/captures_view
 import chesscli/tui/eval_bar
 import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
+import chesscli/tui/menu_view
 import chesscli/tui/puzzle_view
 import chesscli/tui/sound
 import chesscli/tui/status_bar
@@ -87,7 +88,10 @@ fn render_board(state: AppState) -> Nil {
   let black_name = option.from_result(dict.get(state.game.tags, "Black"))
   let captures_commands =
     captures_view.render(pos.board, state.from_white, 0, 12, 7, white_name, black_name)
-  let panel_commands = info_panel.render(state.game, 34, 1, 10, state.analysis, state.deep_analysis_index)
+  let panel_commands = case state.menu_open {
+    True -> menu_view.render(state, 34, 1, 10)
+    False -> info_panel.render(state.game, 34, 1, 10, state.analysis, state.deep_analysis_index)
+  }
   let eval_commands = render_eval_bar(state)
   let status_commands = status_bar.render(state, 13)
 
@@ -131,15 +135,17 @@ fn render_puzzle(state: AppState) -> Nil {
   let black_name = option.Some(p.black_name)
   let name_commands =
     captures_view.render_names(state.from_white, 0, 12, 7, white_name, black_name)
-  let panel_commands =
-    puzzle_view.render(
-      session,
-      state.puzzle_phase,
-      state.puzzle_feedback,
-      pos.board,
-      state.input_buffer,
-      34, 1, 10,
-    )
+  let panel_commands = case state.menu_open {
+    True -> menu_view.render(state, 34, 1, 10)
+    False ->
+      puzzle_view.render(
+        session,
+        state.puzzle_phase,
+        state.puzzle_feedback,
+        pos.board,
+        34, 1, 10,
+      )
+  }
   let eval_commands = case uci.parse_score(p.eval_before) {
     Ok(score) -> eval_bar.render(score, 0, 2, 8)
     Error(_) -> []
@@ -403,7 +409,7 @@ fn handle_effect(
         }
         _ -> {
           let msg_state =
-            app.AppState(..state, input_error: "No cached puzzles. Analyze a game first with 'r', then press 'p'.")
+            app.AppState(..state, input_error: "No cached puzzles. Analyze a game first (Esc > a), then use puzzles (Esc > p).")
           render(msg_state)
           loop(msg_state, engine)
         }
@@ -431,7 +437,7 @@ fn handle_effect(
     app.ScanForPuzzles | app.RefreshPuzzles -> {
       // TODO: Implement auto-scan of chess.com games
       let msg_state =
-        app.AppState(..state, input_error: "Auto-scan not yet implemented. Analyze a game first with 'r', then press 'p'.")
+        app.AppState(..state, input_error: "Auto-scan not yet implemented. Analyze a game first (Esc > a), then use puzzles (Esc > p).")
       render(msg_state)
       loop(msg_state, engine)
     }

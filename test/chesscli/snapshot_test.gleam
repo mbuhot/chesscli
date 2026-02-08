@@ -13,6 +13,7 @@ import chesscli/tui/captures_view
 import chesscli/tui/eval_bar
 import chesscli/tui/game_browser_view
 import chesscli/tui/info_panel
+import chesscli/tui/menu_view
 import chesscli/tui/puzzle_view
 import chesscli/tui/status_bar
 import chesscli/tui/virtual_terminal
@@ -89,7 +90,7 @@ pub fn initial_board_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [PLAY] White | u:undo f:flip q:quit
+  [PLAY] White | Esc: menu
 "
 }
 
@@ -115,7 +116,32 @@ pub fn after_e4_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [PLAY] Black | u:undo f:flip q:quit
+  [PLAY] Black | Esc: menu
+"
+}
+
+// --- Snapshot: input buffer in FreePlay ---
+
+pub fn input_buffer_free_play_snapshot_test() {
+  let state = app.new()
+  let #(state, _) = app.update(state, event.Char("N"))
+  let #(state, _) = app.update(state, event.Char("f"))
+  let result = render_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐
+    8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    6 │                        │
+    5 │                        │
+    4 │                        │
+    3 │                        │
+    2 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    1 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
+      └────────────────────────┘
+        a  b  c  d  e  f  g  h
+
+  > Nf█
 "
 }
 
@@ -142,7 +168,7 @@ pub fn replay_mode_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | ←→ Home End f r q
+  [REPLAY] White | Esc: menu
 "
 }
 
@@ -179,7 +205,7 @@ pub fn captures_after_exchange_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
        ♟ +1
-  [PLAY] Black | u:undo f:flip q:quit
+  [PLAY] Black | Esc: menu
 "
 }
 
@@ -226,7 +252,7 @@ pub fn long_game_replay_snapshot_test() {
       └────────────────────────┘   12. Bc2   Re8
         a  b  c  d  e  f  g  h
        player1
-  [REPLAY] White | ←→ Home End f r q
+  [REPLAY] White | Esc: menu
 "
 }
 
@@ -239,6 +265,8 @@ fn render_long_snapshot(state: app.AppState) -> String {
 
 pub fn browser_username_input_snapshot_test() {
   let state = app.new()
+  // Open menu, press 'b' for browser
+  let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("b"))
   let #(state, _) = app.update(state, event.Char("h"))
   let #(state, _) = app.update(state, event.Char("i"))
@@ -246,18 +274,12 @@ pub fn browser_username_input_snapshot_test() {
   let result = render_snapshot(state)
   assert result
     == "
-  Chess.com username: hik\u{2588}
+  Chess.com username: hik█
 
 
 
 
-
-
-
-
-
-
-
+\n\n\n\n\n\n
   [BROWSE] Enter username | Esc:back
 "
 }
@@ -280,11 +302,6 @@ pub fn replay_with_analysis_snapshot_test() {
     )
   let state = AppState(..app.from_game(g), game: g, analysis: Some(ga))
   let result = render_snapshot(state)
-  // Eval bar appears at columns 0-1 on rows 2-9 (8 rows).
-  // At +0.20 (position after e5), bar is slightly white-biased.
-  // Status bar should show eval "+0.20".
-  // The current position eval bar label appears at row 6 (midpoint of rows 2-9).
-  // Eval bar at col 0-1 overwrites rank labels; "+0" label at midpoint row
   assert result
     == "
       ┌────────────────────────┐  >1. e4     e5
@@ -299,7 +316,7 @@ pub fn replay_with_analysis_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | +0.20 | ←→ Home End f q
+  [REPLAY] White | +0.20 | Esc: menu
 "
 }
 
@@ -328,7 +345,7 @@ pub fn deep_analysis_white_move_fish_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | ←→ Home End f r q
+  [REPLAY] White | Esc: menu
 "
 }
 
@@ -355,7 +372,7 @@ pub fn deep_analysis_black_move_fish_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | ←→ Home End f r q
+  [REPLAY] White | Esc: menu
 "
 }
 
@@ -398,12 +415,37 @@ pub fn puzzle_solving_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | h:hint r:reveal n:next Esc:back q:quit
+  Black | Esc: menu
+"
+}
+
+pub fn puzzle_input_buffer_snapshot_test() {
+  let state = puzzle_snapshot_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let result = render_puzzle_snapshot(state)
+  assert result
+    == "
+      ┌────────────────────────┐  Puzzle 1/1  Mistake
+    1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
+    3 │                        │
+    4 │          ♟             │
+    5 │                        │
+    6 │                        │
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
+      └────────────────────────┘
+        h  g  f  e  d  c  b  a
+
+  > d5█
 "
 }
 
 pub fn puzzle_hint_piece_snapshot_test() {
   let state = puzzle_snapshot_state()
+  // Open menu, press 'h' for hint
+  let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("h"))
   let result = render_puzzle_snapshot(state)
   assert result
@@ -420,7 +462,7 @@ pub fn puzzle_hint_piece_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | h:hint r:reveal n:next Esc:back q:quit
+  Black | Esc: menu
 "
 }
 
@@ -430,7 +472,8 @@ pub fn puzzle_incorrect_then_hint_snapshot_test() {
   let #(state, _) = app.update(state, event.Char("e"))
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, _) = app.update(state, event.Enter)
-  // Request hint after incorrect guess
+  // Request hint after incorrect guess via menu
+  let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("h"))
   let result = render_puzzle_snapshot(state)
   assert result
@@ -447,12 +490,14 @@ pub fn puzzle_incorrect_then_hint_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | h:hint r:reveal n:next Esc:back q:quit
+  Black | Esc: menu
 "
 }
 
 pub fn puzzle_revealed_snapshot_test() {
   let state = puzzle_snapshot_state()
+  // Open menu, press 'r' to reveal
+  let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("r"))
   let result = render_puzzle_snapshot(state)
   assert result
@@ -469,7 +514,7 @@ pub fn puzzle_revealed_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | h:hint r:reveal n:next Esc:back q:quit
+  Black | Esc: menu
 "
 }
 
@@ -493,11 +538,42 @@ pub fn puzzle_correct_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | h:hint r:reveal n:next Esc:back q:quit
+  Black | Esc: menu
+"
+}
+
+// --- Menu overlay snapshot ---
+
+pub fn menu_overlay_snapshot_test() {
+  let state = app.from_game(sample_game())
+  let #(state, _) = app.update(state, event.Esc)
+  assert state.menu_open == True
+  let commands = render_full_ui(state)
+  let result = virtual_terminal.render_to_string(commands, 65, 15)
+  assert result
+    == "
+      ┌────────────────────────┐  Commands          Esc: close
+    8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   [f] Flip board
+    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │   [a] Analyze game
+    6 │                        │   [p] Puzzle training
+    5 │                        │   [b] Browse chess.com
+    4 │                        │   [q] Quit
+    3 │                        │
+    2 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    1 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
+      └────────────────────────┘
+        a  b  c  d  e  f  g  h
+
+  [REPLAY] White | Esc: menu
 "
 }
 
 // --- Helpers ---
+
+fn sample_game() -> game.Game {
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5 2. Nf3 Nc6")
+  game.from_pgn(pgn_game)
+}
 
 fn render_snapshot(state: app.AppState) -> String {
   let commands = render_full_ui(state)
@@ -537,15 +613,17 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
           best_move_to: best_to,
         )
       let board_commands = board_view.render(pos.board, options)
-      let panel_commands =
-        puzzle_view.render(
-          session,
-          state.puzzle_phase,
-          state.puzzle_feedback,
-          pos.board,
-          state.input_buffer,
-          34, 1, 10,
-        )
+      let panel_commands = case state.menu_open {
+        True -> menu_view.render(state, 34, 1, 10)
+        False ->
+          puzzle_view.render(
+            session,
+            state.puzzle_phase,
+            state.puzzle_feedback,
+            pos.board,
+            34, 1, 10,
+          )
+      }
       let status_commands = status_bar.render(state, 13)
       list.flatten([board_commands, panel_commands, status_commands])
     }
@@ -572,7 +650,10 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
       let black_name = option.from_result(dict.get(state.game.tags, "Black"))
       let captures_commands =
         captures_view.render(pos.board, state.from_white, 0, 12, 7, white_name, black_name)
-      let panel_commands = info_panel.render(state.game, 34, 1, 10, state.analysis, state.deep_analysis_index)
+      let panel_commands = case state.menu_open {
+        True -> menu_view.render(state, 34, 1, 10)
+        False -> info_panel.render(state.game, 34, 1, 10, state.analysis, state.deep_analysis_index)
+      }
       let eval_commands = render_eval_bar(state)
       let status_commands = status_bar.render(state, 13)
       list.flatten([
@@ -619,4 +700,3 @@ fn render_eval_bar(state: AppState) -> List(command.Command) {
     None -> []
   }
 }
-

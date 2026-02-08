@@ -86,7 +86,6 @@ pub fn render(
   phase: PuzzlePhase,
   feedback: String,
   board: Board,
-  input_buffer: String,
   start_col: Int,
   start_row: Int,
   max_height: Int,
@@ -121,12 +120,10 @@ pub fn render(
     ],
     // Row 3+: phase content
     render_content_lines(content, start_col, start_row + 3, phase),
-    // Input buffer line
-    render_input_line(input_buffer, phase, start_col, start_row + 3 + list.length(content) + 1),
   ])
 
   // Clear remaining rows
-  let used = 4 + list.length(content) + 1
+  let used = 3 + list.length(content)
   let clear_cmds = clear_remaining(start_col, start_row + used, max_height - used)
 
   list.flatten([list.flatten(lines), clear_cmds])
@@ -176,28 +173,6 @@ fn render_content_lines(
   })
 }
 
-fn render_input_line(
-  buffer: String,
-  phase: PuzzlePhase,
-  start_col: Int,
-  row: Int,
-) -> List(List(command.Command)) {
-  case phase {
-    Solving | HintPiece | HintSquare | Incorrect ->
-      case buffer {
-        "" -> []
-        _ -> [
-          [
-            command.MoveTo(start_col, row),
-            command.ResetStyle,
-            command.Print("> " <> buffer <> "\u{2588}"),
-            command.Clear(terminal.UntilNewLine),
-          ],
-        ]
-      }
-    _ -> []
-  }
-}
 
 fn clear_remaining(
   start_col: Int,

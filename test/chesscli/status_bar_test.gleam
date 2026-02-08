@@ -3,7 +3,7 @@ import chesscli/chess/pgn
 import chesscli/engine/analysis.{GameAnalysis, Mistake}
 import chesscli/engine/uci.{Centipawns}
 import chesscli/puzzle/puzzle.{Puzzle}
-import chesscli/tui/app.{AppState, MoveInput}
+import chesscli/tui/app.{AppState}
 import chesscli/tui/status_bar
 import etch/event
 import gleam/option
@@ -33,19 +33,19 @@ pub fn format_status_free_play_mode_test() {
   let status = status_bar.format_status(state)
   assert string.contains(status, "[PLAY]") == True
   assert string.contains(status, "White") == True
-  assert string.contains(status, "u:undo") == True
+  assert string.contains(status, "Esc: menu") == True
 }
 
-pub fn format_status_move_input_mode_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "Nf")
+pub fn format_status_with_input_buffer_test() {
+  let state = AppState(..app.new(), input_buffer: "Nf")
   let status = status_bar.format_status(state)
   assert string.contains(status, "> Nf") == True
 }
 
-pub fn format_status_move_input_empty_buffer_test() {
-  let state = AppState(..app.new(), mode: MoveInput, input_buffer: "")
+pub fn format_status_empty_buffer_shows_mode_test() {
+  let state = app.new()
   let status = status_bar.format_status(state)
-  assert string.contains(status, "> ") == True
+  assert string.contains(status, "[PLAY]") == True
 }
 
 // --- format_error ---
@@ -73,6 +73,8 @@ pub fn render_produces_positioned_commands_test() {
 
 pub fn format_status_browser_username_input_test() {
   let state = app.new()
+  // Open menu, then press 'b'
+  let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("b"))
   let status = status_bar.format_status(state)
   assert string.contains(status, "[BROWSE]") == True
@@ -81,6 +83,7 @@ pub fn format_status_browser_username_input_test() {
 
 pub fn format_status_browser_archive_list_test() {
   let state = app.new()
+  let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("b"))
   let #(state, _) = app.update(state, event.Char("h"))
   let #(state, _) = app.update(state, event.Enter)
@@ -91,12 +94,12 @@ pub fn format_status_browser_archive_list_test() {
 
 // --- Analysis status ---
 
-pub fn format_status_replay_without_analysis_shows_r_hint_test() {
+pub fn format_status_replay_without_analysis_shows_esc_menu_test() {
   let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
   let state = app.from_game(game.from_pgn(pgn_game))
   let status = status_bar.format_status(state)
   assert string.contains(status, "[REPLAY]") == True
-  assert string.contains(status, " r ") == True
+  assert string.contains(status, "Esc: menu") == True
 }
 
 pub fn format_status_replay_with_analysis_shows_eval_test() {
@@ -147,22 +150,20 @@ fn puzzle_status_state() -> app.AppState {
   app.enter_puzzle_mode(app.from_game(game.new()), session)
 }
 
-pub fn format_status_puzzle_mode_shows_puzzle_label_test() {
+pub fn format_status_puzzle_mode_shows_esc_menu_test() {
   let state = puzzle_status_state()
   let status = status_bar.format_status(state)
-  assert string.contains(status, "h:hint") == True
+  assert string.contains(status, "Esc: menu") == True
 }
 
-pub fn format_status_puzzle_mode_shows_keybindings_test() {
+pub fn format_status_puzzle_mode_shows_color_test() {
   let state = puzzle_status_state()
   let status = status_bar.format_status(state)
-  assert string.contains(status, "h:hint") == True
-  assert string.contains(status, "r:reveal") == True
-  assert string.contains(status, "q:quit") == True
+  assert string.contains(status, "White") == True
 }
 
 pub fn format_status_puzzle_no_session_test() {
   let state = AppState(..app.new(), mode: app.PuzzleTraining)
   let status = status_bar.format_status(state)
-  assert status == "h:hint r:reveal n:next q:quit"
+  assert status == "Esc: menu"
 }

@@ -30,11 +30,13 @@ fn browser_state_with_phase(phase: app.BrowserPhase) -> AppState {
 
 pub fn username_input_prompt_test() {
   let state = app.new()
+  // Open menu, press 'b' to browse
+  let #(state, _) = app.update(state, event.Esc)
   let #(state, _) = app.update(state, event.Char("b"))
   let #(state, _) = app.update(state, event.Char("h"))
   let #(state, _) = app.update(state, event.Char("i"))
   let result = render_to_text(state)
-  assert string.contains(result, "Chess.com username: hi\u{2588}") == True
+  assert string.contains(result, "Chess.com username: hi█") == True
 }
 
 pub fn loading_screen_test() {

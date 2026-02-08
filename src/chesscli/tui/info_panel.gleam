@@ -171,32 +171,59 @@ fn render_moves(
 ) -> List(command.Command) {
   let lines = format_move_lines(game, analysis, deep_analysis_index)
   let visible = scroll_window(lines, max_lines)
-  list.index_map(visible, fn(line, i) {
-    let is_current = line.white_current || line.black_current
-    let prefix = case is_current {
-      True -> ">"
-      False -> " "
-    }
-    let white_width = string.length(line.prefix) + string.length(line.white_text)
-    let #(white_pad, mid_fish) = case line.white_analyzing {
-      True -> #(string.repeat(" ", int.max(0, 10 - white_width - 2)), "\u{1F41F}")
-      False -> #(string.repeat(" ", 10 - white_width), "")
-    }
-    let end_fish = case line.black_analyzing {
-      True -> "\u{1F41F}"
-      False -> ""
-    }
-    list.flatten([
-      [command.MoveTo(start_col, start_row + i), command.ResetStyle],
-      [command.Print(prefix <> line.prefix)],
-      render_half(line.white_text, line.white_current, line.white_classification),
-      [command.Print(white_pad <> mid_fish)],
-      render_half(line.black_text, line.black_current, line.black_classification),
-      [command.Print(end_fish)],
-      [command.ResetStyle, command.Clear(terminal.UntilNewLine)],
-    ])
-  })
-  |> list.flatten
+  let used = list.length(visible)
+  let move_cmds =
+    list.index_map(visible, fn(line, i) {
+      let is_current = line.white_current || line.black_current
+      let prefix = case is_current {
+        True -> ">"
+        False -> " "
+      }
+      let white_width =
+        string.length(line.prefix) + string.length(line.white_text)
+      let #(white_pad, mid_fish) = case line.white_analyzing {
+        True -> #(
+          string.repeat(" ", int.max(0, 10 - white_width - 2)),
+          "\u{1F41F}",
+        )
+        False -> #(string.repeat(" ", 10 - white_width), "")
+      }
+      let end_fish = case line.black_analyzing {
+        True -> "\u{1F41F}"
+        False -> ""
+      }
+      list.flatten([
+        [command.MoveTo(start_col, start_row + i), command.ResetStyle],
+        [command.Print(prefix <> line.prefix)],
+        render_half(line.white_text, line.white_current, line.white_classification),
+        [command.Print(white_pad <> mid_fish)],
+        render_half(line.black_text, line.black_current, line.black_classification),
+        [command.Print(end_fish)],
+        [command.ResetStyle, command.Clear(terminal.UntilNewLine)],
+      ])
+    })
+    |> list.flatten
+  let clear_cmds = clear_remaining(start_col, start_row + used, max_lines - used)
+  list.flatten([move_cmds, clear_cmds])
+}
+
+fn clear_remaining(
+  start_col: Int,
+  start_row: Int,
+  count: Int,
+) -> List(command.Command) {
+  case count > 0 {
+    True ->
+      list.range(0, count - 1)
+      |> list.flat_map(fn(i) {
+        [
+          command.MoveTo(start_col, start_row + i),
+          command.ResetStyle,
+          command.Clear(terminal.UntilNewLine),
+        ]
+      })
+    False -> []
+  }
 }
 
 fn render_half(
