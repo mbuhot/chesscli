@@ -176,6 +176,32 @@ pub fn format_without_analysis_has_no_classification_test() {
   assert black_entry.classification == option.None
 }
 
+// --- deep analysis indicator ---
+
+pub fn format_move_list_white_analyzing_test() {
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5 2. Nf3")
+  let g = game.from_pgn(pgn_game)
+  let g = game.goto_end(g)
+  // deep_analysis_index 0 = analyzing position before move 0 (white's e4)
+  let entries = info_panel.format_move_list(g, option.None, option.Some(0))
+  let assert [e4, e5, nf3] = entries
+  assert e4.is_analyzing == True
+  assert e5.is_analyzing == False
+  assert nf3.is_analyzing == False
+}
+
+pub fn format_move_list_black_analyzing_test() {
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5 2. Nf3")
+  let g = game.from_pgn(pgn_game)
+  let g = game.goto_end(g)
+  // deep_analysis_index 1 = analyzing position before move 1 (black's e5)
+  let entries = info_panel.format_move_list(g, option.None, option.Some(1))
+  let assert [e4, e5, nf3] = entries
+  assert e4.is_analyzing == False
+  assert e5.is_analyzing == True
+  assert nf3.is_analyzing == False
+}
+
 pub fn render_with_analysis_includes_color_commands_test() {
   let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
   let g = game.from_pgn(pgn_game)

@@ -178,13 +178,21 @@ fn render_moves(
       False -> " "
     }
     let white_width = string.length(line.prefix) + string.length(line.white_text)
-    let white_pad = string.repeat(" ", 10 - white_width)
+    let #(white_pad, mid_fish) = case line.white_analyzing {
+      True -> #(string.repeat(" ", int.max(0, 10 - white_width - 2)), "\u{1F41F}")
+      False -> #(string.repeat(" ", 10 - white_width), "")
+    }
+    let end_fish = case line.black_analyzing {
+      True -> "\u{1F41F}"
+      False -> ""
+    }
     list.flatten([
       [command.MoveTo(start_col, start_row + i), command.ResetStyle],
       [command.Print(prefix <> line.prefix)],
-      render_half(line.white_text, line.white_current, line.white_analyzing, line.white_classification),
-      [command.Print(white_pad)],
-      render_half(line.black_text, line.black_current, line.black_analyzing, line.black_classification),
+      render_half(line.white_text, line.white_current, line.white_classification),
+      [command.Print(white_pad <> mid_fish)],
+      render_half(line.black_text, line.black_current, line.black_classification),
+      [command.Print(end_fish)],
       [command.ResetStyle, command.Clear(terminal.UntilNewLine)],
     ])
   })
@@ -194,7 +202,6 @@ fn render_moves(
 fn render_half(
   text: String,
   is_current: Bool,
-  is_analyzing: Bool,
   classification: Option(MoveClassification),
 ) -> List(command.Command) {
   let color_cmds = case classification {
@@ -217,14 +224,10 @@ fn render_half(
     True -> [command.SetAttributes([style.Bold, style.Underline])]
     False -> []
   }
-  let suffix = case is_analyzing {
-    True -> "\u{1F41F}"
-    False -> ""
-  }
   list.flatten([
     color_cmds,
     style_cmds,
-    [command.Print(text <> suffix)],
+    [command.Print(text)],
     [command.ResetStyle],
   ])
 }

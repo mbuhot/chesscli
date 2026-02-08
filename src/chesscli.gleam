@@ -81,8 +81,8 @@ fn render_board(state: AppState) -> Nil {
   let white_name = option.from_result(dict.get(state.game.tags, "White"))
   let black_name = option.from_result(dict.get(state.game.tags, "Black"))
   let captures_commands =
-    captures_view.render(pos.board, state.from_white, 0, 12, 4, white_name, black_name)
-  let panel_commands = info_panel.render(state.game, 31, 1, 10, state.analysis, state.deep_analysis_index)
+    captures_view.render(pos.board, state.from_white, 0, 12, 7, white_name, black_name)
+  let panel_commands = info_panel.render(state.game, 34, 1, 10, state.analysis, state.deep_analysis_index)
   let eval_commands = render_eval_bar(state)
   let status_commands = status_bar.render(state, 13)
 
