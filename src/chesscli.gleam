@@ -31,6 +31,11 @@ import gleam/string
 @external(javascript, "./chesscli/tui/tui_ffi.mjs", "exit")
 fn exit(n: Int) -> Nil
 
+/// Yield to the JS macro task queue via setTimeout, ensuring pending I/O
+/// (stdin, Stockfish stdout) gets processed before we resume.
+@external(javascript, "./chesscli/tui/tui_ffi.mjs", "sleep")
+fn sleep(ms: Int) -> promise.Promise(Nil)
+
 pub fn main() {
   stdout.execute([
     command.EnterRaw,
@@ -105,11 +110,12 @@ fn render_browser(state: AppState) -> Nil {
 }
 
 fn loop(state: AppState, engine: Option(stockfish.EngineProcess)) {
-  // During deep analysis, poll with short timeout so we can interleave
-  // user input processing with evaluation progress checks
+  // During deep analysis, yield to the JS event loop via setTimeout so
+  // stdin and Stockfish I/O get processed, then check for events
   case state.deep_analysis_index {
     Some(_) -> {
-      use evt <- promise.await(event.poll(50))
+      use _ <- promise.await(sleep(50))
+      use evt <- promise.await(event.poll(0))
       case evt {
         Some(Ok(Key(k))) -> handle_input(state, k.code, engine)
         Some(Ok(event.Resize(_, _))) -> {
