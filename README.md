@@ -23,9 +23,12 @@ Navigate through a loaded game's move history.
 | Key | Action |
 |-----|--------|
 | `Left` / `Right` | Step backward / forward one move |
+| `Up` / `Down` | Skip forward / backward one full turn |
+| `Page Up` / `Page Down` | Skip 10 turns |
 | `Home` / `End` | Jump to start / end of game |
 | `f` | Flip board |
 | `r` | Analyze game with Stockfish |
+| `p` | Start puzzle training |
 | `b` | Open Chess.com game browser |
 | `q` | Quit |
 
@@ -77,11 +80,39 @@ Press `r` in Game Replay mode to analyze the current game with Stockfish. The en
 Once analysis completes, the following features become available:
 
 - **Eval bar** — a vertical bar on the left side of the board showing the current position's evaluation, with white fill growing from the bottom for white advantage
-- **Color-coded moves** — moves in the move list are colored by quality: green (best/excellent), yellow (inaccuracy), orange (mistake), red (blunder)
+- **Color-coded moves** — moves in the move list are colored by quality: green (best/excellent), cyan (miss), yellow (inaccuracy), orange (mistake), red (blunder)
 - **Best move highlight** — the engine's recommended move is highlighted in blue on the board
 - **Eval in status bar** — the current position's evaluation is shown in the status bar (e.g. `+0.35`, `-1.50`, `M3`)
 
 Navigate through the game with arrow keys to see how the evaluation and best move change at each position. Loading a new game from the browser clears the analysis.
+
+### Puzzle Training
+
+After analyzing a game, press `p` to generate puzzles from your mistakes and practice finding the best moves. Puzzles are extracted from positions where Stockfish found a significantly better move than what was played (misses, mistakes, and blunders).
+
+**Getting started:**
+
+1. Load a game from chess.com (`b`) or play into a position
+2. Analyze with Stockfish (`r`) — wait for analysis to complete
+3. Press `p` to enter puzzle training
+
+Each puzzle shows the board from the position where a mistake was made and asks you to find the engine's recommended move. Type your answer in SAN (e.g. `Nf7`, `d5`) or UCI (e.g. `g1f3`) and press `Enter`.
+
+**Progressive hints:** Press `h` once to see which piece to move (e.g. "Move your knight"), press again for the target square (e.g. "Knight to f7").
+
+**Reveal:** Press `r` to see the full solution, including what was actually played, the eval swing, and the engine's continuation line.
+
+| Key | Action |
+|-----|--------|
+| Type + `Enter` | Submit answer (SAN or UCI) |
+| `h` | Progressive hint (piece, then square) |
+| `r` | Reveal solution with explanation |
+| `n` / `Enter` | Next puzzle (after solving or revealing) |
+| `N` | Previous puzzle |
+| `f` | Flip board |
+| `Escape` / `q` | Exit puzzle training |
+
+Puzzles accumulate across games in `~/.chesscli/puzzles.json` (up to 50 positions). Each time you analyze a game and press `p`, new puzzles are merged with your existing collection. Duplicate positions are automatically skipped. Press `p` without analyzing to train on your saved puzzles.
 
 ## Development
 
