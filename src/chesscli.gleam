@@ -109,6 +109,10 @@ fn render_puzzle(state: AppState) -> Nil {
     Ok(position) -> position
     Error(_) -> game.current_position(state.game)
   }
+  let #(last_from, last_to) = case state.puzzle_attempted_uci {
+    option.Some(uci_str) -> parse_uci_squares(uci_str)
+    option.None -> #(None, None)
+  }
   let #(best_from, best_to) = case state.puzzle_phase {
     puzzle.Revealed | puzzle.Correct -> parse_uci_squares(p.solution_uci)
     _ -> #(None, None)
@@ -116,8 +120,8 @@ fn render_puzzle(state: AppState) -> Nil {
   let options =
     RenderOptions(
       from_white: state.from_white,
-      last_move_from: None,
-      last_move_to: None,
+      last_move_from: last_from,
+      last_move_to: last_to,
       check_square: None,
       best_move_from: best_from,
       best_move_to: best_to,
@@ -136,6 +140,10 @@ fn render_puzzle(state: AppState) -> Nil {
       state.input_buffer,
       34, 1, 10,
     )
+  let eval_commands = case uci.parse_score(p.eval_before) {
+    Ok(score) -> eval_bar.render(score, 0, 2, 8)
+    Error(_) -> []
+  }
   let status_commands = status_bar.render(state, 13)
   stdout.execute(
     list.flatten([
@@ -143,6 +151,7 @@ fn render_puzzle(state: AppState) -> Nil {
       board_commands,
       name_commands,
       panel_commands,
+      eval_commands,
       status_commands,
     ]),
   )
@@ -408,7 +417,7 @@ fn handle_effect(
             Some(cached) -> cached
             None -> []
           }
-          let merged = puzzle.merge_puzzles(existing, updated, 50)
+          let merged = puzzle.merge_puzzles(updated, existing, 50)
           store.write_puzzles(merged)
           render(state)
           loop(state, engine)

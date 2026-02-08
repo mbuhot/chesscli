@@ -1,4 +1,5 @@
 import chesscli/engine/uci.{Centipawns, Mate}
+import gleam/list
 import gleam/option
 
 // --- format_position ---
@@ -111,6 +112,35 @@ pub fn negate_score_positive_mate_test() {
 
 pub fn negate_score_negative_mate_test() {
   assert uci.negate_score(Mate(-2)) == Mate(2)
+}
+
+// --- parse_score ---
+
+pub fn parse_score_positive_test() {
+  assert uci.parse_score("+0.35") == Ok(Centipawns(35))
+}
+
+pub fn parse_score_negative_test() {
+  assert uci.parse_score("-1.50") == Ok(Centipawns(-150))
+}
+
+pub fn parse_score_zero_test() {
+  assert uci.parse_score("0.00") == Ok(Centipawns(0))
+}
+
+pub fn parse_score_mate_test() {
+  assert uci.parse_score("M3") == Ok(Mate(3))
+}
+
+pub fn parse_score_negative_mate_test() {
+  assert uci.parse_score("-M2") == Ok(Mate(-2))
+}
+
+pub fn parse_score_roundtrip_test() {
+  let scores = [Centipawns(35), Centipawns(-150), Centipawns(0), Mate(3), Mate(-2)]
+  let assert True =
+    scores
+    |> list.all(fn(s) { uci.parse_score(uci.format_score(s)) == Ok(s) })
 }
 
 // --- format_go_movetime ---

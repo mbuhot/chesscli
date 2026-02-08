@@ -123,6 +123,38 @@ pub fn format_position_with_moves(fen: String, moves: List(String)) -> String {
   }
 }
 
+/// Parse a formatted score string back into a Score.
+/// Inverse of format_score: "+0.35" → Centipawns(35), "M3" → Mate(3).
+pub fn parse_score(s: String) -> Result(Score, Nil) {
+  case s {
+    "M" <> rest -> {
+      use n <- result.try(int.parse(rest))
+      Ok(Mate(n))
+    }
+    "-M" <> rest -> {
+      use n <- result.try(int.parse(rest))
+      Ok(Mate(-n))
+    }
+    _ -> parse_centipawns_string(s)
+  }
+}
+
+fn parse_centipawns_string(s: String) -> Result(Score, Nil) {
+  let #(sign, digits) = case s {
+    "+" <> rest -> #(1, rest)
+    "-" <> rest -> #(-1, rest)
+    _ -> #(1, s)
+  }
+  case string.split(digits, ".") {
+    [whole_str, frac_str] -> {
+      use whole <- result.try(int.parse(whole_str))
+      use frac <- result.try(int.parse(frac_str))
+      Ok(Centipawns(sign * { whole * 100 + frac }))
+    }
+    _ -> Error(Nil)
+  }
+}
+
 fn format_centipawns(cp: Int) -> String {
   let abs = int.absolute_value(cp)
   let whole = abs / 100

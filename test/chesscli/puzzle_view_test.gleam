@@ -6,7 +6,6 @@ import chesscli/puzzle/puzzle.{
   Solving,
 }
 import chesscli/tui/puzzle_view
-import gleam/list
 import gleam/string
 
 fn sample_puzzle() -> Puzzle {
@@ -69,6 +68,18 @@ pub fn format_instruction_black_test() {
 pub fn format_instruction_white_test() {
   let p = Puzzle(..sample_puzzle(), player_color: color.White)
   assert puzzle_view.format_instruction(p) == "Find the best move for White"
+}
+
+// --- format_solve_progress ---
+
+pub fn format_solve_progress_zero_test() {
+  let p = sample_puzzle()
+  assert puzzle_view.format_solve_progress(p) == "Solved: 0/3"
+}
+
+pub fn format_solve_progress_one_test() {
+  let p = Puzzle(..sample_puzzle(), solve_count: 1)
+  assert puzzle_view.format_solve_progress(p) == "Solved: 1/3"
 }
 
 // --- format_phase_content ---

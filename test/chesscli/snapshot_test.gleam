@@ -388,7 +388,7 @@ pub fn puzzle_solving_snapshot_test() {
     == "
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
-    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │
     4 │          ♟             │
     5 │                        │
@@ -410,7 +410,7 @@ pub fn puzzle_hint_piece_snapshot_test() {
     == "
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
-    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │
     4 │          ♟             │  Move your pawn
     5 │                        │
@@ -437,7 +437,7 @@ pub fn puzzle_incorrect_then_hint_snapshot_test() {
     == "
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
-    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │
     4 │          ♟             │  Move your pawn
     5 │                        │
@@ -459,7 +459,7 @@ pub fn puzzle_revealed_snapshot_test() {
     == "
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
-    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │  Best: d5 (eval +0.2)
     4 │          ♟             │  You played: e5 (eval +1.7)
     5 │                        │  1...d5 2. exd5 Qxd5
@@ -483,8 +483,8 @@ pub fn puzzle_correct_snapshot_test() {
     == "
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
-    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
-    3 │                        │  Correct!
+    2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
+    3 │                        │  Correct! d5
     4 │          ♟             │
     5 │                        │
     6 │                        │

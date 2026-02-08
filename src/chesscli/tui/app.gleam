@@ -75,6 +75,7 @@ pub type AppState {
     puzzle_phase: PuzzlePhase,
     puzzle_feedback: String,
     puzzle_hint_used: Bool,
+    puzzle_attempted_uci: Option(String),
   )
 }
 
@@ -112,6 +113,7 @@ pub fn new() -> AppState {
     puzzle_phase: puzzle.Solving,
     puzzle_feedback: "",
     puzzle_hint_used: False,
+    puzzle_attempted_uci: option.None,
   )
 }
 
@@ -132,6 +134,7 @@ pub fn from_game(g: Game) -> AppState {
     puzzle_phase: puzzle.Solving,
     puzzle_feedback: "",
     puzzle_hint_used: False,
+    puzzle_attempted_uci: option.None,
   )
 }
 
@@ -230,6 +233,7 @@ pub fn enter_puzzle_mode(
     puzzle_phase: puzzle.Solving,
     puzzle_feedback: "",
     puzzle_hint_used: False,
+    puzzle_attempted_uci: option.None,
     input_buffer: "",
     input_error: "",
     from_white: from_white,
@@ -292,6 +296,14 @@ fn update_puzzle_solving(
           Render,
         )
       }
+    event.Char("/") ->
+      case state.input_buffer {
+        "" -> #(
+          AppState(..state, input_buffer: " ", input_error: ""),
+          Render,
+        )
+        _ -> #(state, None)
+      }
     event.Enter | event.Char("\r") -> check_puzzle_answer(state, session)
     event.Backspace | event.Char("\u{007f}") -> {
       let new_buffer = string.drop_end(state.input_buffer, 1)
@@ -324,6 +336,7 @@ fn update_puzzle_after_result(
             puzzle_phase: puzzle.Solving,
             puzzle_feedback: "",
             puzzle_hint_used: False,
+            puzzle_attempted_uci: option.None,
             input_buffer: "",
             input_error: "",
             from_white: puzzle_perspective(s),
@@ -409,18 +422,21 @@ fn check_puzzle_answer(
   state: AppState,
   session: TrainingSession,
 ) -> #(AppState, Effect) {
-  case state.input_buffer {
+  let buffer = string.trim(state.input_buffer)
+  case buffer {
     "" -> #(state, None)
-    buffer -> {
+    _ -> {
       let assert option.Some(p) = puzzle.current_puzzle(session)
       case parse_puzzle_input(buffer, p) {
-        Ok(uci) ->
+        Ok(uci) -> {
+          let san = puzzle.format_uci_as_san(p.fen, uci)
           case puzzle.check_move(p, uci) {
             True -> #(
               AppState(
                 ..state,
                 puzzle_phase: puzzle.Correct,
-                puzzle_feedback: "Correct!",
+                puzzle_feedback: "Correct! " <> san,
+                puzzle_attempted_uci: option.Some(uci),
                 input_buffer: "",
                 input_error: "",
               ),
@@ -430,13 +446,15 @@ fn check_puzzle_answer(
               AppState(
                 ..state,
                 puzzle_phase: puzzle.Incorrect,
-                puzzle_feedback: "Not the best move.",
+                puzzle_feedback: san <> " is not the best move.",
+                puzzle_attempted_uci: option.Some(uci),
                 input_buffer: "",
                 input_error: "",
               ),
               Render,
             )
           }
+        }
         Error(err) -> #(
           AppState(..state, input_buffer: "", input_error: err),
           Render,

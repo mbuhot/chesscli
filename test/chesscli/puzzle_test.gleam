@@ -197,6 +197,15 @@ pub fn merge_puzzles_deduplicates_by_fen_and_solution_test() {
   assert kept.played_uci == p1.played_uci
 }
 
+pub fn merge_puzzles_first_arg_wins_on_duplicate_test() {
+  let updated = Puzzle(..sample_puzzle(), solve_count: 2)
+  let stale = Puzzle(..sample_puzzle(), solve_count: 0)
+  // Updated puzzles should come first so their solve_count is preserved
+  let result = puzzle.merge_puzzles([updated], [stale], 50)
+  let assert [kept] = result
+  assert kept.solve_count == 2
+}
+
 pub fn merge_puzzles_caps_at_max_test() {
   let puzzles =
     list.range(1, 60)

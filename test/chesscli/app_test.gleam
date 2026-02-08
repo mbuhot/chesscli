@@ -1039,7 +1039,9 @@ pub fn puzzle_correct_answer_test() {
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, effect) = app.update(state, event.Enter)
   assert state.puzzle_phase == Correct
-  assert state.puzzle_feedback == "Correct!"
+  assert string.contains(state.puzzle_feedback, "Correct!")
+  assert string.contains(state.puzzle_feedback, "d5")
+  assert state.puzzle_attempted_uci == option.Some("d7d5")
   assert state.input_buffer == ""
   assert effect == Render
 }
@@ -1051,7 +1053,8 @@ pub fn puzzle_correct_san_answer_test() {
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, effect) = app.update(state, event.Enter)
   assert state.puzzle_phase == Correct
-  assert state.puzzle_feedback == "Correct!"
+  assert string.contains(state.puzzle_feedback, "Correct!")
+  assert state.puzzle_attempted_uci == option.Some("d7d5")
   assert effect == Render
 }
 
@@ -1061,7 +1064,9 @@ pub fn puzzle_incorrect_answer_test() {
   let #(state, _) = app.update(state, event.Char("5"))
   let #(state, effect) = app.update(state, event.Enter)
   assert state.puzzle_phase == Incorrect
-  assert state.puzzle_feedback == "Not the best move."
+  assert string.contains(state.puzzle_feedback, "e5")
+  assert string.contains(state.puzzle_feedback, "is not the best move")
+  assert state.puzzle_attempted_uci == option.Some("e7e5")
   assert state.input_buffer == ""
   assert effect == Render
 }
@@ -1101,6 +1106,30 @@ pub fn puzzle_empty_enter_is_noop_test() {
   let state = puzzle_state()
   let #(_, effect) = app.update(state, event.Enter)
   assert effect == None
+}
+
+// --- Slash input mode ---
+
+pub fn puzzle_slash_enables_h_file_input_test() {
+  let state = puzzle_state()
+  // Without slash, 'h' triggers hint
+  let #(hint_state, _) = app.update(state, event.Char("h"))
+  assert hint_state.puzzle_phase == HintPiece
+  // With slash, 'h' is captured as input
+  let #(state, _) = app.update(state, event.Char("/"))
+  let #(state, _) = app.update(state, event.Char("h"))
+  let #(state, _) = app.update(state, event.Char("4"))
+  assert state.puzzle_phase == Solving
+  assert string.contains(state.input_buffer, "h4")
+}
+
+pub fn puzzle_slash_then_enter_parses_move_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("/"))
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
 }
 
 // --- Reveal ---
@@ -1164,6 +1193,16 @@ pub fn puzzle_n_after_correct_advances_test() {
   let assert option.Some(session) = state.puzzle_session
   assert session.current_index == 1
   assert effect == app.SavePuzzles
+}
+
+pub fn puzzle_n_clears_attempted_uci_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_attempted_uci == option.Some("d7d5")
+  let #(state, _) = app.update(state, event.Char("n"))
+  assert state.puzzle_attempted_uci == option.None
 }
 
 pub fn puzzle_n_after_reveal_advances_test() {

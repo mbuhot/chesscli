@@ -39,6 +39,11 @@ pub fn format_instruction(p: Puzzle) -> String {
   "Find the best move for " <> color.to_string(p.player_color)
 }
 
+/// Format the solve progress line (e.g. "Solved: 1/3").
+pub fn format_solve_progress(p: Puzzle) -> String {
+  "Solved: " <> int.to_string(p.solve_count) <> "/3"
+}
+
 /// Format the phase-dependent content lines.
 pub fn format_phase_content(
   phase: PuzzlePhase,
@@ -109,8 +114,11 @@ pub fn render(
       [command.MoveTo(start_col, start_row + 1), command.ResetStyle],
       [command.Print(instruction), clear],
     ],
-    // Row 2: blank
-    [[command.MoveTo(start_col, start_row + 2), command.ResetStyle, clear]],
+    // Row 2: solve progress
+    [
+      [command.MoveTo(start_col, start_row + 2), command.ResetStyle],
+      [command.Print(format_solve_progress(p)), clear],
+    ],
     // Row 3+: phase content
     render_content_lines(content, start_col, start_row + 3, phase),
     // Input buffer line
