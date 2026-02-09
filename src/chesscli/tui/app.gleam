@@ -684,7 +684,41 @@ fn update_puzzle_training(
   case state.puzzle_phase {
     puzzle.Correct | puzzle.Revealed ->
       update_puzzle_after_result(state, session, key)
+    puzzle.Incorrect -> update_puzzle_incorrect(state, key)
     _ -> update_puzzle_solving(state, session, key)
+  }
+}
+
+fn update_puzzle_incorrect(
+  state: AppState,
+  key: KeyCode,
+) -> #(AppState, Effect) {
+  case key {
+    event.Enter | event.Char("\r") -> {
+      let buffer = string.trim(state.input_buffer)
+      case buffer {
+        // Empty buffer: reset to original position for another attempt
+        "" -> #(
+          AppState(
+            ..state,
+            puzzle_phase: puzzle.Solving,
+            puzzle_feedback: "",
+            puzzle_attempted_uci: option.None,
+            input_error: "",
+          ),
+          Render,
+        )
+        // Non-empty buffer: try this as a new answer
+        _ -> {
+          let assert option.Some(session) = state.puzzle_session
+          check_puzzle_answer(state, session)
+        }
+      }
+    }
+    event.Esc | event.Char("\u{001b}") -> handle_escape(state)
+    event.Backspace | event.Char("\u{007f}") -> handle_backspace(state)
+    event.Char(c) -> append_to_buffer(state, c)
+    _ -> #(state, None)
   }
 }
 
