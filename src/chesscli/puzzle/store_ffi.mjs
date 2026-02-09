@@ -51,6 +51,7 @@ function puzzleToJson(p) {
     classification: classificationToString(p.classification),
     white_name: p.white_name,
     black_name: p.black_name,
+    preceding_move_uci: p.preceding_move_uci,
     solve_count: p.solve_count,
   };
 }
@@ -68,6 +69,7 @@ function jsonToPuzzle(j) {
     stringToClassification(j.classification),
     j.white_name || "?",
     j.black_name || "?",
+    j.preceding_move_uci || "",
     j.solve_count || 0,
   );
 }

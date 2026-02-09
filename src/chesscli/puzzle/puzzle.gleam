@@ -32,6 +32,8 @@ pub type Puzzle {
     classification: MoveClassification,
     white_name: String,
     black_name: String,
+    /// The opponent's move that created the puzzle position (UCI string).
+    preceding_move_uci: String,
     /// Consecutive clean solves (no hints). Puzzle is mastered at 3.
     solve_count: Int,
   )

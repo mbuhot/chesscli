@@ -992,6 +992,7 @@ fn sample_puzzle() -> Puzzle {
     classification: Mistake,
     white_name: "Alice",
     black_name: "Bob",
+    preceding_move_uci: "",
     solve_count: 0,
   )
 }

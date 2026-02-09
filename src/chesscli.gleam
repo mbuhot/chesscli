@@ -115,7 +115,7 @@ fn render_puzzle(state: AppState) -> Nil {
   }
   let #(last_from, last_to) = case state.puzzle_attempted_uci {
     option.Some(uci_str) -> parse_uci_squares(uci_str)
-    option.None -> #(None, None)
+    option.None -> parse_uci_squares(p.preceding_move_uci)
   }
   let #(best_from, best_to) = case state.puzzle_phase {
     puzzle.Revealed | puzzle.Correct -> parse_uci_squares(p.solution_uci)

@@ -21,6 +21,7 @@ fn sample_puzzle() -> Puzzle {
     classification: Mistake,
     white_name: "me",
     black_name: "opponent",
+    preceding_move_uci: "",
     solve_count: 0,
   )
 }

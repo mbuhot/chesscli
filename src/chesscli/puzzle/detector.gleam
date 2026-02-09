@@ -47,6 +47,14 @@ fn build_puzzle(ma: MoveAnalysis, game: Game) -> Result(Puzzle, Nil) {
       let source = format_source_label(game)
       let white = option.unwrap(option.from_result(dict.get(game.tags, "White")), "?")
       let black = option.unwrap(option.from_result(dict.get(game.tags, "Black")), "?")
+      let preceding = case idx > 0 {
+        True ->
+          case list_at(game.moves, idx - 1) {
+            Ok(m) -> move.to_uci(m)
+            Error(_) -> ""
+          }
+        False -> ""
+      }
       Ok(Puzzle(
         fen: fen_str,
         player_color: pos.active_color,
@@ -59,6 +67,7 @@ fn build_puzzle(ma: MoveAnalysis, game: Game) -> Result(Puzzle, Nil) {
         classification: ma.classification,
         white_name: white,
         black_name: black,
+        preceding_move_uci: preceding,
         solve_count: 0,
       ))
     }

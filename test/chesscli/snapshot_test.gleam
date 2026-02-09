@@ -392,6 +392,7 @@ fn puzzle_snapshot_state() -> AppState {
       classification: Mistake,
       white_name: "Alice",
       black_name: "Bob",
+      preceding_move_uci: "e2e4",
       solve_count: 0,
     )
   let session = puzzle.new_session([p])
@@ -715,6 +716,10 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
         Ok(position) -> position
         Error(_) -> game.current_position(state.game)
       }
+      let #(last_from, last_to) = case state.puzzle_attempted_uci {
+        Some(uci_str) -> parse_uci_squares(uci_str)
+        None -> parse_uci_squares(p.preceding_move_uci)
+      }
       let #(best_from, best_to) = case state.puzzle_phase {
         puzzle.Revealed | puzzle.Correct -> parse_uci_squares(p.solution_uci)
         _ -> #(None, None)
@@ -722,8 +727,8 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
       let options =
         RenderOptions(
           from_white: state.from_white,
-          last_move_from: None,
-          last_move_to: None,
+          last_move_from: last_from,
+          last_move_to: last_to,
           check_square: None,
           best_move_from: best_from,
           best_move_to: best_to,

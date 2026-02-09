@@ -144,6 +144,7 @@ fn puzzle_status_state() -> app.AppState {
       classification: Mistake,
       white_name: "White",
       black_name: "Black",
+      preceding_move_uci: "",
       solve_count: 0,
     )
   let session = puzzle.new_session([p])
