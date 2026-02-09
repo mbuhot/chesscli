@@ -193,14 +193,22 @@ fn render_explore(state: AppState) -> Nil {
     True -> move_gen.find_king(pos.board, pos.active_color)
     False -> None
   }
+  let #(best_from, best_to) = case state.explore_show_best {
+    True ->
+      case state.explore_best_move {
+        Some(uci_str) -> parse_uci_squares(uci_str)
+        None -> #(None, None)
+      }
+    False -> #(None, None)
+  }
   let options =
     RenderOptions(
       from_white: state.from_white,
       last_move_from: option.map(last, fn(m) { m.from }),
       last_move_to: option.map(last, fn(m) { m.to }),
       check_square: check_square,
-      best_move_from: None,
-      best_move_to: None,
+      best_move_from: best_from,
+      best_move_to: best_to,
     )
   let board_commands = board_view.render(pos.board, options)
   let captures_commands =
@@ -577,13 +585,13 @@ fn handle_effect(
         stockfish.evaluate_with_go(eng, position_cmd, uci.format_go(14)),
       )
       stockfish.stop(eng)
-      let #(raw_eval, _, _) = parse_engine_output(lines)
+      let #(raw_eval, best, _) = parse_engine_output(lines)
       // Normalize to white's perspective
       let eval = case pos.active_color {
         color.White -> raw_eval
         color.Black -> uci.negate_score(raw_eval)
       }
-      let #(new_state, eff) = app.on_explore_eval_result(state, eval)
+      let #(new_state, eff) = app.on_explore_eval_result(state, eval, best)
       handle_effect(new_state, eff, engine)
     }
     app.ScanForPuzzles | app.RefreshPuzzles -> {

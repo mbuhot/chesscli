@@ -1581,8 +1581,9 @@ pub fn puzzle_explore_quit_exits_to_game_replay_test() {
 pub fn on_explore_eval_result_stores_score_test() {
   let state = explore_state_from_correct()
   let #(state, effect) =
-    app.on_explore_eval_result(state, Centipawns(42))
+    app.on_explore_eval_result(state, Centipawns(42), "e2e4")
   assert state.explore_eval == option.Some(Centipawns(42))
+  assert state.explore_best_move == option.Some("e2e4")
   assert effect == Render
 }
 
@@ -1615,7 +1616,7 @@ pub fn menu_items_puzzle_explore_test() {
   let state = explore_state_from_correct()
   let items = app.menu_items(state)
   let keys = list.map(items, fn(i) { i.key })
-  assert keys == ["f", "u", "b", "q"]
+  assert keys == ["s", "f", "u", "b", "q"]
 }
 
 pub fn menu_items_puzzle_correct_includes_explore_test() {

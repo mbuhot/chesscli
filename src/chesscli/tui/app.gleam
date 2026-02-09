@@ -89,6 +89,8 @@ pub type AppState {
     puzzle_hint_used: Bool,
     puzzle_attempted_uci: Option(String),
     explore_eval: Option(uci.Score),
+    explore_best_move: Option(String),
+    explore_show_best: Bool,
   )
 }
 
@@ -131,6 +133,8 @@ pub fn new() -> AppState {
     puzzle_hint_used: False,
     puzzle_attempted_uci: option.None,
     explore_eval: option.None,
+    explore_best_move: option.None,
+    explore_show_best: False,
   )
 }
 
@@ -154,6 +158,8 @@ pub fn from_game(g: Game) -> AppState {
     puzzle_hint_used: False,
     puzzle_attempted_uci: option.None,
     explore_eval: option.None,
+    explore_best_move: option.None,
+    explore_show_best: False,
   )
 }
 
@@ -247,6 +253,7 @@ fn menu_items_puzzle(state: AppState) -> List(MenuItem) {
 
 fn menu_items_puzzle_explore() -> List(MenuItem) {
   [
+    MenuItem("s", "Show best move"),
     MenuItem("f", "Flip board"),
     MenuItem("u", "Undo move"),
     MenuItem("b", "Back to puzzle"),
@@ -530,12 +537,16 @@ fn dispatch_explore_command(
   key: String,
 ) -> #(AppState, Effect) {
   case key {
+    "s" -> #(
+      AppState(..state, explore_show_best: !state.explore_show_best),
+      Render,
+    )
     "f" -> #(AppState(..state, from_white: !state.from_white), Render)
     "u" ->
       case game.backward(state.game) {
         Ok(g) -> {
           let truncated = game.truncate(g)
-          #(AppState(..state, game: truncated, explore_eval: option.None), EvaluateExplorePosition)
+          #(AppState(..state, game: truncated, explore_eval: option.None, explore_best_move: option.None), EvaluateExplorePosition)
         }
         Error(_) -> #(state, None)
       }
@@ -561,6 +572,8 @@ fn enter_puzzle_explore(
           input_buffer: "",
           input_error: "",
           explore_eval: option.None,
+          explore_best_move: option.None,
+          explore_show_best: False,
         ),
         EvaluateExplorePosition,
       )
@@ -586,8 +599,16 @@ fn return_to_puzzle(state: AppState) -> #(AppState, Effect) {
 pub fn on_explore_eval_result(
   state: AppState,
   score: uci.Score,
+  best_move: String,
 ) -> #(AppState, Effect) {
-  #(AppState(..state, explore_eval: option.Some(score)), Render)
+  let best = case best_move {
+    "" -> option.None
+    bm -> option.Some(bm)
+  }
+  #(
+    AppState(..state, explore_eval: option.Some(score), explore_best_move: best),
+    Render,
+  )
 }
 
 // --- Analysis ---
