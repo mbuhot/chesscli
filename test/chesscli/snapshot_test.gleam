@@ -558,10 +558,10 @@ pub fn menu_overlay_snapshot_test() {
       ┌────────────────────────┐  Commands          Esc: close
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   [f] Flip board
     7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │   [a] Analyze game
-    6 │                        │   [p] Puzzle training
-    5 │                        │   [b] Browse chess.com
-    4 │                        │   [q] Quit
-    3 │                        │
+    6 │                        │   [n] New game
+    5 │                        │   [p] Puzzle training
+    4 │                        │   [b] Browse chess.com
+    3 │                        │   [q] Quit
     2 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
     1 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
       └────────────────────────┘

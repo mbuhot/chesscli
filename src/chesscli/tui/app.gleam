@@ -168,6 +168,7 @@ fn menu_items_replay(state: AppState) -> List(MenuItem) {
     option.None -> [MenuItem("a", "Analyze game")]
   }
   let tail = [
+    MenuItem("n", "New game"),
     MenuItem("p", "Puzzle training"),
     MenuItem("b", "Browse chess.com"),
     MenuItem("q", "Quit"),
@@ -274,6 +275,7 @@ fn dispatch_replay_command(state: AppState, key: String) -> #(AppState, Effect) 
   case key {
     "f" -> #(AppState(..state, from_white: !state.from_white), Render)
     "a" -> start_analysis(state)
+    "n" -> new_game(state)
     "p" -> start_puzzles(state)
     "b" -> enter_browser(state)
     "q" -> #(state, Quit)
@@ -719,6 +721,23 @@ fn parse_puzzle_input(
       }
     Error(_) -> Error("Invalid position")
   }
+}
+
+fn new_game(state: AppState) -> #(AppState, Effect) {
+  #(
+    AppState(
+      ..state,
+      mode: FreePlay,
+      game: game.new(),
+      from_white: True,
+      analysis: option.None,
+      analysis_progress: option.None,
+      deep_analysis_index: option.None,
+      input_buffer: "",
+      input_error: "",
+    ),
+    Render,
+  )
 }
 
 fn exit_puzzle_mode(state: AppState) -> #(AppState, Effect) {

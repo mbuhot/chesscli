@@ -186,6 +186,18 @@ pub fn menu_q_quits_test() {
   assert effect == Quit
 }
 
+pub fn replay_menu_n_starts_new_game_test() {
+  let state = app.from_game(sample_game())
+  assert state.mode == GameReplay
+  let #(state, effect) = menu_command(state, "n")
+  assert state.mode == FreePlay
+  assert state.game.current_index == 0
+  assert state.game.moves == []
+  assert state.from_white == True
+  assert state.analysis == option.None
+  assert effect == Render
+}
+
 pub fn menu_unknown_key_does_nothing_test() {
   let state = AppState(..app.from_game(sample_game()), menu_open: True)
   let #(state, effect) = app.update(state, event.Char("x"))
@@ -1333,7 +1345,7 @@ pub fn menu_items_replay_no_analysis_test() {
   let state = app.from_game(sample_game())
   let items = app.menu_items(state)
   let keys = list.map(items, fn(i) { i.key })
-  assert keys == ["f", "a", "p", "b", "q"]
+  assert keys == ["f", "a", "n", "p", "b", "q"]
 }
 
 pub fn menu_items_replay_with_analysis_test() {
@@ -1344,7 +1356,7 @@ pub fn menu_items_replay_with_analysis_test() {
   let items = app.menu_items(state)
   let keys = list.map(items, fn(i) { i.key })
   // 'a' should not appear when analysis exists
-  assert keys == ["f", "p", "b", "q"]
+  assert keys == ["f", "n", "p", "b", "q"]
 }
 
 pub fn menu_items_free_play_test() {
