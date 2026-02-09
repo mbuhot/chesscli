@@ -5,13 +5,25 @@ A terminal chess UI written in [Gleam](https://gleam.run/), targeting JavaScript
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/076bef95-c712-4377-bd6d-6d78335d58bd" />
 
 
-## Requirements
+## Installation
+
+### Prerequisites
 
 - [Gleam](https://gleam.run/) >= 1.0
-- [Bun](https://bun.sh/) runtime
-- [Stockfish](https://stockfishchess.org/) (for game analysis — `brew install stockfish` on macOS)
+- [Bun](https://bun.sh/) >= 1.0
+- [Stockfish](https://stockfishchess.org/) for game analysis (`brew install stockfish` on macOS)
 
-## Running
+### Build and install
+
+```sh
+git clone https://github.com/mbuhot/chesscli.git
+cd chesscli
+make install
+```
+
+This compiles the Gleam source to JavaScript, bundles it into a standalone executable with Bun, and copies it to `~/.local/bin/chesscli`. Make sure `~/.local/bin` is on your PATH.
+
+### Running from source
 
 ```sh
 gleam run --target javascript
@@ -40,6 +52,7 @@ Press `Escape` (when the input buffer is empty) to open the command menu. The me
 |-----|--------|
 | `f` | Flip board |
 | `a` | Analyze game with Stockfish |
+| `n` | New game (return to free play) |
 | `p` | Start puzzle training |
 | `b` | Open Chess.com game browser |
 | `q` | Quit |
@@ -124,6 +137,8 @@ Puzzles accumulate across games in `~/.chesscli/puzzles.json` (up to 50 position
 ## Development
 
 ```sh
-gleam test --target javascript  # Run the tests
-gleam build --target javascript # Build without running
+gleam test --target javascript  # Run tests
+make                            # Build standalone binary to ./bin/chesscli
+make install                    # Build and copy to ~/.local/bin
+make clean                      # Remove build artifacts
 ```
