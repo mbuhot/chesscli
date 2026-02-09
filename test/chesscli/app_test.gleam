@@ -11,10 +11,10 @@ import chesscli/puzzle/puzzle.{
 }
 import chesscli/tui/app.{
   type AppState, AnalyzeGame, AppState, ArchiveList,
-  CancelDeepAnalysis, ContinueDeepAnalysis, EvaluatePuzzleAttempt,
-  FetchArchives, FetchGames, FreePlay, GameBrowser,
+  CancelDeepAnalysis, ContinueDeepAnalysis, EvaluateExplorePosition,
+  EvaluatePuzzleAttempt, FetchArchives, FetchGames, FreePlay, GameBrowser,
   GameList, GameReplay, LoadCachedPuzzles, LoadError, LoadingArchives,
-  LoadingGames, None, PuzzleTraining, Quit, Render, StartPuzzles,
+  LoadingGames, None, PuzzleExplore, PuzzleTraining, Quit, Render, StartPuzzles,
   UsernameInput,
 }
 import etch/event
@@ -1381,7 +1381,7 @@ pub fn menu_items_puzzle_correct_test() {
   assert state.puzzle_phase == Correct
   let items = app.menu_items(state)
   let keys = list.map(items, fn(i) { i.key })
-  assert keys == ["n", "N", "r", "f", "q"]
+  assert keys == ["n", "N", "r", "e", "f", "q"]
 }
 
 pub fn menu_items_puzzle_revealed_test() {
@@ -1390,7 +1390,7 @@ pub fn menu_items_puzzle_revealed_test() {
   assert state.puzzle_phase == Revealed
   let items = app.menu_items(state)
   let keys = list.map(items, fn(i) { i.key })
-  assert keys == ["n", "N", "f", "q"]
+  assert keys == ["n", "N", "e", "f", "q"]
 }
 
 // --- on_puzzle_attempt_evaluated classification tests ---
@@ -1460,4 +1460,191 @@ pub fn puzzle_end_repeated_enter_does_not_inflate_stats_test() {
   // Third Enter → still the same
   let #(state, _) = app.update(state, event.Enter)
   assert state.puzzle_feedback == "Done! 1/1 solved, 0 revealed"
+}
+
+// --- PuzzleExplore mode ---
+
+fn explore_state_from_correct() -> AppState {
+  let state = puzzle_state()
+  // Solve correctly
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  // Enter explore via menu
+  let #(state, _) = menu_command(state, "e")
+  state
+}
+
+pub fn puzzle_explore_enter_from_correct_test() {
+  let state = explore_state_from_correct()
+  assert state.mode == PuzzleExplore
+  assert state.input_buffer == ""
+  assert state.input_error == ""
+  assert state.explore_eval == option.None
+  // Game should start from the puzzle's FEN position
+  assert state.game.current_index == 0
+  assert state.game.moves == []
+}
+
+pub fn puzzle_explore_enter_from_revealed_test() {
+  let state = puzzle_state()
+  let #(state, _) = menu_command(state, "r")
+  assert state.puzzle_phase == Revealed
+  let #(state, _) = menu_command(state, "e")
+  assert state.mode == PuzzleExplore
+}
+
+pub fn puzzle_explore_enter_from_incorrect_test() {
+  let state = puzzle_state()
+  // Submit an incorrect answer
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Incorrect
+  let #(state, _) = menu_command(state, "e")
+  assert state.mode == PuzzleExplore
+}
+
+pub fn puzzle_explore_typing_appends_to_buffer_test() {
+  let state = explore_state_from_correct()
+  let #(state, effect) = app.update(state, event.Char("d"))
+  assert state.input_buffer == "d"
+  assert effect == Render
+  let #(state, _) = app.update(state, event.Char("5"))
+  assert state.input_buffer == "d5"
+}
+
+pub fn puzzle_explore_enter_valid_move_returns_eval_effect_test() {
+  let state = explore_state_from_correct()
+  // The puzzle FEN has black to move, type d5
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, effect) = app.update(state, event.Enter)
+  assert state.mode == PuzzleExplore
+  assert state.game.current_index == 1
+  assert state.input_buffer == ""
+  assert effect == EvaluateExplorePosition
+}
+
+pub fn puzzle_explore_enter_invalid_move_shows_error_test() {
+  let state = explore_state_from_correct()
+  let #(state, _) = app.update(state, event.Char("z"))
+  let #(state, _) = app.update(state, event.Char("z"))
+  let #(state, effect) = app.update(state, event.Enter)
+  assert state.mode == PuzzleExplore
+  assert string.contains(state.input_error, "Invalid")
+  assert effect == Render
+}
+
+pub fn puzzle_explore_undo_goes_back_test() {
+  let state = explore_state_from_correct()
+  // Make a move first
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.game.current_index == 1
+  assert list.length(state.game.moves) == 1
+  // Undo via menu — truncates moves and re-evaluates position
+  let #(state, effect) = menu_command(state, "u")
+  assert state.game.current_index == 0
+  assert state.game.moves == []
+  assert state.explore_eval == option.None
+  assert effect == EvaluateExplorePosition
+}
+
+pub fn puzzle_explore_flip_works_test() {
+  let state = explore_state_from_correct()
+  let original = state.from_white
+  let #(state, effect) = menu_command(state, "f")
+  assert state.from_white == !original
+  assert effect == Render
+}
+
+pub fn puzzle_explore_back_returns_to_puzzle_test() {
+  let state = explore_state_from_correct()
+  let #(state, effect) = menu_command(state, "b")
+  assert state.mode == PuzzleTraining
+  assert state.input_buffer == ""
+  assert state.explore_eval == option.None
+  assert effect == Render
+}
+
+pub fn puzzle_explore_quit_exits_to_game_replay_test() {
+  let state = explore_state_from_correct()
+  let #(state, effect) = menu_command(state, "q")
+  assert state.mode == GameReplay
+  assert state.puzzle_session == option.None
+  assert effect == Render
+}
+
+pub fn on_explore_eval_result_stores_score_test() {
+  let state = explore_state_from_correct()
+  let #(state, effect) =
+    app.on_explore_eval_result(state, Centipawns(42))
+  assert state.explore_eval == option.Some(Centipawns(42))
+  assert effect == Render
+}
+
+pub fn puzzle_explore_backspace_removes_char_test() {
+  let state = explore_state_from_correct()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, effect) = app.update(state, event.Backspace)
+  assert state.input_buffer == "d"
+  assert effect == Render
+}
+
+pub fn puzzle_explore_escape_with_buffer_clears_test() {
+  let state = explore_state_from_correct()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.input_buffer == ""
+  assert state.menu_open == False
+  assert effect == Render
+}
+
+pub fn puzzle_explore_escape_empty_opens_menu_test() {
+  let state = explore_state_from_correct()
+  let #(state, effect) = app.update(state, event.Esc)
+  assert state.menu_open == True
+  assert effect == Render
+}
+
+pub fn menu_items_puzzle_explore_test() {
+  let state = explore_state_from_correct()
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert keys == ["f", "u", "b", "q"]
+}
+
+pub fn menu_items_puzzle_correct_includes_explore_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Correct
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert list.contains(keys, "e")
+}
+
+pub fn menu_items_puzzle_revealed_includes_explore_test() {
+  let state = puzzle_state()
+  let #(state, _) = menu_command(state, "r")
+  assert state.puzzle_phase == Revealed
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert list.contains(keys, "e")
+}
+
+pub fn menu_items_puzzle_incorrect_includes_explore_test() {
+  let state = puzzle_state()
+  let #(state, _) = app.update(state, event.Char("e"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  assert state.puzzle_phase == Incorrect
+  let items = app.menu_items(state)
+  let keys = list.map(items, fn(i) { i.key })
+  assert list.contains(keys, "e")
 }

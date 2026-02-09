@@ -6,7 +6,7 @@ import chesscli/chess/game
 import chesscli/engine/uci
 import chesscli/tui/app.{
   type AppState, ArchiveList, FreePlay, GameBrowser, GameList, GameReplay,
-  LoadError, LoadingArchives, LoadingGames, PuzzleTraining,
+  LoadError, LoadingArchives, LoadingGames, PuzzleExplore, PuzzleTraining,
   UsernameInput,
 }
 import chesscli/puzzle/puzzle
@@ -44,6 +44,7 @@ fn format_mode_label(state: AppState) -> String {
     FreePlay -> "[PLAY] " <> side <> " | Esc: menu"
     GameBrowser -> format_browser_status(state)
     PuzzleTraining -> format_puzzle_status(state)
+    PuzzleExplore -> format_explore_status(state, side)
   }
 }
 
@@ -100,6 +101,14 @@ fn format_puzzle_status(state: AppState) -> String {
     }
     option.None -> "Esc: menu"
   }
+}
+
+fn format_explore_status(state: AppState, side: String) -> String {
+  let eval_str = case state.explore_eval {
+    option.Some(score) -> " | " <> uci.format_score(score)
+    option.None -> ""
+  }
+  "[EXPLORE] " <> side <> eval_str <> " | Esc: menu"
 }
 
 fn format_browser_status(state: AppState) -> String {

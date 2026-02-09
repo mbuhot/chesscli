@@ -1,6 +1,7 @@
 //// Renders the move list and game tags panel to the right of the board.
 //// Shows move numbers, SAN notation, and highlights the current position.
 
+import chesscli/chess/color
 import chesscli/chess/game.{type Game}
 import chesscli/chess/san
 import chesscli/engine/analysis.{
@@ -38,35 +39,67 @@ pub fn format_move_list(
   let moves = game.moves
   let positions = game.positions
   let cursor = game.current_index
+
+  let #(starts_with_black, start_fullmove) = case positions {
+    [pos, ..] -> #(pos.active_color == color.Black, pos.fullmove_number)
+    [] -> #(False, 1)
+  }
+  let offset = case starts_with_black {
+    True -> 1
+    False -> 0
+  }
   let total = list.length(moves)
-  let max_num = { total - 1 } / 2 + 1
+  let max_ply = total + offset
+  let max_num = case max_ply > 0 {
+    True -> start_fullmove + { max_ply - 1 } / 2
+    False -> start_fullmove
+  }
   let num_width = string.length(int.to_string(max_num))
 
-  list.index_map(moves, fn(m, i) {
-    let assert Ok(pos) = list_at(positions, i)
-    let san_text = san.to_string(m, pos)
-    let is_current = i + 1 == cursor
-    let move_number = i / 2 + 1
-    let is_white_move = i % 2 == 0
-    let is_analyzing = deep_analysis_index == option.Some(i)
+  let entries =
+    list.index_map(moves, fn(m, i) {
+      let assert Ok(pos) = list_at(positions, i)
+      let san_text = san.to_string(m, pos)
+      let is_current = i + 1 == cursor
+      let adjusted = i + offset
+      let move_number = start_fullmove + adjusted / 2
+      let is_white_move = adjusted % 2 == 0
+      let is_analyzing = deep_analysis_index == option.Some(i)
 
-    let prefix = case is_white_move {
-      True -> {
-        let num_str = int.to_string(move_number)
-        let pad = string.repeat(" ", num_width - string.length(num_str))
-        pad <> num_str <> ". "
+      let prefix = case is_white_move {
+        True -> {
+          let num_str = int.to_string(move_number)
+          let pad = string.repeat(" ", num_width - string.length(num_str))
+          pad <> num_str <> ". "
+        }
+        False -> ""
       }
-      False -> ""
+      let classification = get_classification(analysis, i)
+      MoveEntry(
+        prefix: prefix,
+        text: san_text,
+        is_current: is_current,
+        is_analyzing: is_analyzing,
+        classification: classification,
+      )
+    })
+
+  case starts_with_black {
+    True -> {
+      let num_str = int.to_string(start_fullmove)
+      let pad = string.repeat(" ", num_width - string.length(num_str))
+      let placeholder =
+        MoveEntry(
+          prefix: pad <> num_str <> ". ",
+          text: "...",
+          is_current: False,
+          is_analyzing: False,
+          classification: option.None,
+        )
+      [placeholder, ..entries]
     }
-    let classification = get_classification(analysis, i)
-    MoveEntry(
-      prefix: prefix,
-      text: san_text,
-      is_current: is_current,
-      is_analyzing: is_analyzing,
-      classification: classification,
-    )
-  })
+    False -> entries
+  }
 }
 
 fn get_classification(

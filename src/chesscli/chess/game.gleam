@@ -35,6 +35,11 @@ pub fn from_pgn(pgn_game: PgnGame) -> Game {
   )
 }
 
+/// Create a game from an arbitrary position with no move history.
+pub fn from_position(pos: Position) -> Game {
+  Game(tags: dict.new(), positions: [pos], moves: [], current_index: 0)
+}
+
 /// Create a new game from the standard starting position.
 pub fn new() -> Game {
   Game(
@@ -82,6 +87,15 @@ pub fn goto_start(game: Game) -> Game {
 /// Jump to the end of the game (after the last move).
 pub fn goto_end(game: Game) -> Game {
   Game(..game, current_index: list.length(game.moves))
+}
+
+/// Remove all moves and positions after the current index.
+pub fn truncate(game: Game) -> Game {
+  Game(
+    ..game,
+    moves: list.take(game.moves, game.current_index),
+    positions: list.take(game.positions, game.current_index + 1),
+  )
 }
 
 /// Apply a move to the current position in free play mode.

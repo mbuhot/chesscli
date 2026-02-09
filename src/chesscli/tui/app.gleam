@@ -30,6 +30,8 @@ pub type Mode {
   GameBrowser
   /// Solving puzzles extracted from game analysis.
   PuzzleTraining
+  /// Exploring alternative moves from a puzzle position with Stockfish eval.
+  PuzzleExplore
 }
 
 /// Which sub-screen the game browser is showing.
@@ -86,6 +88,7 @@ pub type AppState {
     puzzle_feedback: String,
     puzzle_hint_used: Bool,
     puzzle_attempted_uci: Option(String),
+    explore_eval: Option(uci.Score),
   )
 }
 
@@ -105,6 +108,7 @@ pub type Effect {
   ScanForPuzzles
   RefreshPuzzles
   EvaluatePuzzleAttempt
+  EvaluateExplorePosition
 }
 
 /// Create a new app state in FreePlay mode with a fresh game.
@@ -126,6 +130,7 @@ pub fn new() -> AppState {
     puzzle_feedback: "",
     puzzle_hint_used: False,
     puzzle_attempted_uci: option.None,
+    explore_eval: option.None,
   )
 }
 
@@ -148,6 +153,7 @@ pub fn from_game(g: Game) -> AppState {
     puzzle_feedback: "",
     puzzle_hint_used: False,
     puzzle_attempted_uci: option.None,
+    explore_eval: option.None,
   )
 }
 
@@ -157,6 +163,7 @@ pub fn menu_items(state: AppState) -> List(MenuItem) {
     GameReplay -> menu_items_replay(state)
     FreePlay -> menu_items_free_play()
     PuzzleTraining -> menu_items_puzzle(state)
+    PuzzleExplore -> menu_items_puzzle_explore()
     GameBrowser -> []
   }
 }
@@ -188,9 +195,16 @@ fn menu_items_free_play() -> List(MenuItem) {
 
 fn menu_items_puzzle(state: AppState) -> List(MenuItem) {
   case state.puzzle_phase {
-    puzzle.Solving | puzzle.HintPiece | puzzle.HintSquare | puzzle.Incorrect -> [
+    puzzle.Solving | puzzle.HintPiece | puzzle.HintSquare -> [
       MenuItem("h", "Hint"),
       MenuItem("r", "Reveal solution"),
+      MenuItem("f", "Flip board"),
+      MenuItem("q", "Back to game"),
+    ]
+    puzzle.Incorrect -> [
+      MenuItem("h", "Hint"),
+      MenuItem("r", "Reveal solution"),
+      MenuItem("e", "Explore position"),
       MenuItem("f", "Flip board"),
       MenuItem("q", "Back to game"),
     ]
@@ -198,16 +212,27 @@ fn menu_items_puzzle(state: AppState) -> List(MenuItem) {
       MenuItem("n", "Next puzzle"),
       MenuItem("N", "Previous puzzle"),
       MenuItem("r", "View full line"),
+      MenuItem("e", "Explore position"),
       MenuItem("f", "Flip board"),
       MenuItem("q", "Back to game"),
     ]
     puzzle.Revealed -> [
       MenuItem("n", "Next puzzle"),
       MenuItem("N", "Previous puzzle"),
+      MenuItem("e", "Explore position"),
       MenuItem("f", "Flip board"),
       MenuItem("q", "Back to game"),
     ]
   }
+}
+
+fn menu_items_puzzle_explore() -> List(MenuItem) {
+  [
+    MenuItem("f", "Flip board"),
+    MenuItem("u", "Undo move"),
+    MenuItem("b", "Back to puzzle"),
+    MenuItem("q", "Back to game"),
+  ]
 }
 
 /// Pure state transition: given current state and a key press, return
@@ -221,6 +246,7 @@ pub fn update(state: AppState, key: KeyCode) -> #(AppState, Effect) {
         FreePlay -> update_free_play(state, key)
         GameBrowser -> update_game_browser(state, key)
         PuzzleTraining -> update_puzzle_training(state, key)
+        PuzzleExplore -> update_puzzle_explore(state, key)
       }
   }
 }
@@ -267,6 +293,7 @@ fn dispatch_command(state: AppState, key: String) -> #(AppState, Effect) {
     GameReplay -> dispatch_replay_command(state, key)
     FreePlay -> dispatch_free_play_command(state, key)
     PuzzleTraining -> dispatch_puzzle_command(state, key)
+    PuzzleExplore -> dispatch_explore_command(state, key)
     GameBrowser -> #(state, None)
   }
 }
@@ -319,6 +346,7 @@ fn dispatch_puzzle_command(
         _ -> #(state, None)
       }
     "n" -> advance_puzzle(state, session)
+    "e" -> enter_puzzle_explore(state, session)
     "N" ->
       case puzzle.prev_puzzle(session) {
         Ok(s) -> #(
@@ -431,6 +459,115 @@ fn apply_input_move(state: AppState) -> #(AppState, Effect) {
       }
     }
   }
+}
+
+// --- PuzzleExplore: free-form move exploration from a puzzle position ---
+
+fn update_puzzle_explore(state: AppState, key: KeyCode) -> #(AppState, Effect) {
+  case key {
+    event.Esc | event.Char("\u{001b}") -> handle_escape(state)
+    event.Enter | event.Char("\r") -> apply_explore_move(state)
+    event.Backspace | event.Char("\u{007f}") -> handle_backspace(state)
+    event.Char(c) -> append_to_buffer(state, c)
+    _ -> #(state, None)
+  }
+}
+
+fn apply_explore_move(state: AppState) -> #(AppState, Effect) {
+  let buffer = string.trim(state.input_buffer)
+  case buffer {
+    "" -> #(state, None)
+    _ -> {
+      let pos = game.current_position(state.game)
+      case san.parse(buffer, pos) {
+        Ok(m) ->
+          case game.apply_move(state.game, m) {
+            Ok(g) -> #(
+              AppState(
+                ..state,
+                game: g,
+                input_buffer: "",
+                input_error: "",
+              ),
+              EvaluateExplorePosition,
+            )
+            Error(_) -> #(
+              AppState(..state, input_error: "Illegal move"),
+              Render,
+            )
+          }
+        Error(_) -> #(
+          AppState(..state, input_error: "Invalid: " <> buffer),
+          Render,
+        )
+      }
+    }
+  }
+}
+
+fn dispatch_explore_command(
+  state: AppState,
+  key: String,
+) -> #(AppState, Effect) {
+  case key {
+    "f" -> #(AppState(..state, from_white: !state.from_white), Render)
+    "u" ->
+      case game.backward(state.game) {
+        Ok(g) -> {
+          let truncated = game.truncate(g)
+          #(AppState(..state, game: truncated, explore_eval: option.None), EvaluateExplorePosition)
+        }
+        Error(_) -> #(state, None)
+      }
+    "b" -> return_to_puzzle(state)
+    "q" -> exit_puzzle_mode(state)
+    _ -> #(state, None)
+  }
+}
+
+fn enter_puzzle_explore(
+  state: AppState,
+  session: TrainingSession,
+) -> #(AppState, Effect) {
+  let assert option.Some(p) = puzzle.current_puzzle(session)
+  case fen.parse(p.fen) {
+    Ok(pos) -> {
+      let g = game.from_position(pos)
+      #(
+        AppState(
+          ..state,
+          mode: PuzzleExplore,
+          game: g,
+          input_buffer: "",
+          input_error: "",
+          explore_eval: option.None,
+        ),
+        EvaluateExplorePosition,
+      )
+    }
+    Error(_) -> #(state, None)
+  }
+}
+
+fn return_to_puzzle(state: AppState) -> #(AppState, Effect) {
+  #(
+    AppState(
+      ..state,
+      mode: PuzzleTraining,
+      input_buffer: "",
+      input_error: "",
+      explore_eval: option.None,
+    ),
+    Render,
+  )
+}
+
+/// Update explore eval after Stockfish evaluates the current position.
+pub fn on_explore_eval_result(
+  state: AppState,
+  score: uci.Score,
+) -> #(AppState, Effect) {
+  #(AppState(..state, explore_eval: option.Some(score)), Render)
 }
 
 // --- Analysis ---

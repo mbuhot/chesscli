@@ -13,7 +13,7 @@ import chesscli/puzzle/store
 import chesscli/engine/analysis
 import chesscli/engine/stockfish
 import chesscli/engine/uci
-import chesscli/tui/app.{type AppState, GameBrowser, PuzzleTraining}
+import chesscli/tui/app.{type AppState, GameBrowser, PuzzleExplore, PuzzleTraining}
 import chesscli/tui/board_view.{RenderOptions}
 import chesscli/tui/captures_view
 import chesscli/tui/eval_bar
@@ -61,6 +61,7 @@ fn render(state: AppState) -> Nil {
   case state.mode {
     GameBrowser -> render_browser(state)
     PuzzleTraining -> render_puzzle(state)
+    PuzzleExplore -> render_explore(state)
     _ -> render_board(state)
   }
 }
@@ -156,6 +157,46 @@ fn render_puzzle(state: AppState) -> Nil {
       [command.Clear(terminal.All)],
       board_commands,
       name_commands,
+      panel_commands,
+      eval_commands,
+      status_commands,
+    ]),
+  )
+}
+
+fn render_explore(state: AppState) -> Nil {
+  let pos = game.current_position(state.game)
+  let last = app.last_move(state)
+  let check_square = case move_gen.is_in_check(pos, pos.active_color) {
+    True -> move_gen.find_king(pos.board, pos.active_color)
+    False -> None
+  }
+  let options =
+    RenderOptions(
+      from_white: state.from_white,
+      last_move_from: option.map(last, fn(m) { m.from }),
+      last_move_to: option.map(last, fn(m) { m.to }),
+      check_square: check_square,
+      best_move_from: None,
+      best_move_to: None,
+    )
+  let board_commands = board_view.render(pos.board, options)
+  let captures_commands =
+    captures_view.render(pos.board, state.from_white, 0, 12, 7, None, None)
+  let panel_commands = case state.menu_open {
+    True -> menu_view.render(state, 34, 1, 10)
+    False -> info_panel.render(state.game, 34, 1, 10, None, None)
+  }
+  let eval_commands = case state.explore_eval {
+    Some(score) -> eval_bar.render(score, 0, 2, 8)
+    None -> []
+  }
+  let status_commands = status_bar.render(state, 13)
+  stdout.execute(
+    list.flatten([
+      [command.Clear(terminal.All)],
+      board_commands,
+      captures_commands,
       panel_commands,
       eval_commands,
       status_commands,
@@ -457,6 +498,25 @@ fn handle_effect(
         color.Black -> uci.negate_score(raw_eval)
       }
       let #(new_state, eff) = app.on_puzzle_attempt_evaluated(state, eval)
+      handle_effect(new_state, eff, engine)
+    }
+    app.EvaluateExplorePosition -> {
+      let pos = game.current_position(state.game)
+      let fen_str = fen.to_string(pos)
+      render(state)
+      use eng <- promise.await(stockfish.start())
+      let position_cmd = uci.format_position_with_moves(fen_str, [])
+      use lines <- promise.await(
+        stockfish.evaluate_with_go(eng, position_cmd, uci.format_go(14)),
+      )
+      stockfish.stop(eng)
+      let #(raw_eval, _, _) = parse_engine_output(lines)
+      // Normalize to white's perspective
+      let eval = case pos.active_color {
+        color.White -> raw_eval
+        color.Black -> uci.negate_score(raw_eval)
+      }
+      let #(new_state, eff) = app.on_explore_eval_result(state, eval)
       handle_effect(new_state, eff, engine)
     }
     app.ScanForPuzzles | app.RefreshPuzzles -> {

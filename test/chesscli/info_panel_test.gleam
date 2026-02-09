@@ -1,5 +1,7 @@
+import chesscli/chess/fen
 import chesscli/chess/game
 import chesscli/chess/pgn
+import chesscli/chess/san
 import chesscli/engine/analysis.{Best, Blunder, GameAnalysis, MoveAnalysis}
 import chesscli/engine/uci.{Centipawns}
 import chesscli/tui/info_panel.{MoveEntry}
@@ -226,3 +228,58 @@ pub fn render_with_analysis_includes_color_commands_test() {
   assert has_fg_color == True
 }
 
+// --- black-to-move starting position ---
+
+pub fn format_move_list_black_start_placeholder_test() {
+  // Position with black to move — first move should show as "1. ...  Kh7" pair
+  let assert Ok(pos) =
+    fen.parse(
+      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+    )
+  let g = game.from_position(pos)
+  let assert Ok(m) = san.parse("d5", game.current_position(g))
+  let assert Ok(g) = game.apply_move(g, m)
+  let entries = info_panel.format_move_list(g, option.None, option.None)
+  assert list.length(entries) == 2
+  let assert [placeholder, black_move] = entries
+  // Placeholder for white's missing move
+  assert placeholder.prefix == "1. "
+  assert placeholder.text == "..."
+  assert placeholder.is_current == False
+  // Black's actual move
+  assert black_move.prefix == ""
+  assert black_move.text == "d5"
+  assert black_move.is_current == True
+}
+
+pub fn format_move_lines_black_start_pairs_correctly_test() {
+  let assert Ok(pos) =
+    fen.parse(
+      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+    )
+  let g = game.from_position(pos)
+  let assert Ok(m) = san.parse("d5", game.current_position(g))
+  let assert Ok(g) = game.apply_move(g, m)
+  let lines = info_panel.format_move_lines(g, option.None, option.None)
+  assert list.length(lines) == 1
+  let assert [line] = lines
+  assert line.prefix == "1. "
+  assert line.white_text == "..."
+  assert line.black_text == "d5"
+  assert line.white_current == False
+  assert line.black_current == True
+}
+
+pub fn format_move_list_white_start_unchanged_test() {
+  // Standard white-to-move game should be unchanged
+  let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
+  let g = game.from_pgn(pgn_game)
+  let g = game.goto_end(g)
+  let entries = info_panel.format_move_list(g, option.None, option.None)
+  assert list.length(entries) == 2
+  let assert [white, black] = entries
+  assert white.prefix == "1. "
+  assert white.text == "e4"
+  assert black.prefix == ""
+  assert black.text == "e5"
+}
