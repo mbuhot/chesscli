@@ -297,3 +297,96 @@ pub fn remove_mastered_removes_above_three_test() {
   let result = puzzle.remove_mastered([mastered])
   assert result == []
 }
+
+// --- is_complete ---
+
+pub fn is_complete_false_when_no_results_test() {
+  let session = puzzle.new_session([sample_puzzle()])
+  assert puzzle.is_complete(session) == False
+}
+
+pub fn is_complete_false_when_partial_test() {
+  let session = puzzle.new_session([sample_puzzle(), sample_puzzle_2()])
+  let session = puzzle.record_result(session, Correct)
+  assert puzzle.is_complete(session) == False
+}
+
+pub fn is_complete_true_when_all_recorded_test() {
+  let session = puzzle.new_session([sample_puzzle(), sample_puzzle_2()])
+  let session = puzzle.record_result(session, Correct)
+  let assert Ok(session) = puzzle.next_puzzle(session)
+  let session = puzzle.record_result(session, Revealed)
+  assert puzzle.is_complete(session) == True
+}
+
+// --- restart_session ---
+
+pub fn restart_session_resets_index_and_results_test() {
+  let session = puzzle.new_session([sample_puzzle(), sample_puzzle_2()])
+  let session = puzzle.record_result(session, Correct)
+  let assert Ok(session) = puzzle.next_puzzle(session)
+  let session = puzzle.record_result(session, Revealed)
+  let assert Ok(restarted) = puzzle.restart_session(session)
+  assert restarted.current_index == 0
+  assert restarted.results == []
+  assert list.length(restarted.puzzles) == 2
+}
+
+pub fn restart_session_removes_mastered_test() {
+  let mastered = Puzzle(..sample_puzzle(), solve_count: 3)
+  let unmastered = sample_puzzle_2()
+  let session = puzzle.new_session([mastered, unmastered])
+  let session = puzzle.record_result(session, Correct)
+  let assert Ok(session) = puzzle.next_puzzle(session)
+  let session = puzzle.record_result(session, Correct)
+  let assert Ok(restarted) = puzzle.restart_session(session)
+  assert list.length(restarted.puzzles) == 1
+}
+
+pub fn restart_session_errors_when_all_mastered_test() {
+  let mastered1 = Puzzle(..sample_puzzle(), solve_count: 3)
+  let mastered2 = Puzzle(..sample_puzzle_2(), solve_count: 4)
+  let session = puzzle.new_session([mastered1, mastered2])
+  let session = puzzle.record_result(session, Correct)
+  let assert Ok(session) = puzzle.next_puzzle(session)
+  let session = puzzle.record_result(session, Correct)
+  assert puzzle.restart_session(session) == Error(Nil)
+}
+
+// --- save pipeline: mastered puzzles must not survive via stale cache ---
+
+pub fn save_pipeline_mastered_puzzle_not_reintroduced_from_cache_test() {
+  // Session puzzle was just solved for the 3rd time (solve_count = 3)
+  let session_puzzles = [Puzzle(..sample_puzzle(), solve_count: 3)]
+  // Cached file still has the previous save with solve_count = 2
+  let cached_puzzles = [Puzzle(..sample_puzzle(), solve_count: 2)]
+
+  // Correct SavePuzzles pipeline: merge first, then remove mastered
+  let merged = puzzle.merge_puzzles(session_puzzles, cached_puzzles, 50)
+  let result = puzzle.remove_mastered(merged)
+
+  assert result == []
+}
+
+pub fn save_pipeline_keeps_unmastered_from_session_and_cache_test() {
+  // Session has one mastered, one not
+  let session_puzzles = [
+    Puzzle(..sample_puzzle(), solve_count: 3),
+    Puzzle(..sample_puzzle_2(), solve_count: 1),
+  ]
+  // Cache has an older puzzle not in current session
+  let other_puzzle =
+    Puzzle(..sample_puzzle(), solution_uci: "b1c3", solve_count: 0)
+  let cached_puzzles = [
+    Puzzle(..sample_puzzle(), solve_count: 2),
+    other_puzzle,
+  ]
+
+  // Correct SavePuzzles pipeline: merge first, then remove mastered
+  let merged = puzzle.merge_puzzles(session_puzzles, cached_puzzles, 50)
+  let result = puzzle.remove_mastered(merged)
+
+  // Should keep puzzle_2 (count 1) and other_puzzle (count 0)
+  // Should NOT keep sample_puzzle (mastered at 3, stale cache at 2)
+  assert list.length(result) == 2
+}

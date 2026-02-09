@@ -2,7 +2,9 @@
 //// feedback similar to online chess platforms.
 
 import chesscli/chess/board
+import chesscli/chess/move.{type Move}
 import chesscli/chess/move_gen
+import chesscli/chess/position.{type Position}
 import chesscli/tui/app.{type AppState}
 import gleam/option.{type Option, None, Some}
 
@@ -24,6 +26,27 @@ pub fn play(sound: SoundType) -> Nil {
     CaptureSound -> do_play("capture")
     CheckSound -> do_play("check")
     CastleSound -> do_play("castle")
+  }
+}
+
+/// Determine the sound type for a move applied to a position.
+pub fn sound_for_move(pos: Position, m: Move) -> SoundType {
+  let pos_after = move.apply(pos, m)
+  case move_gen.is_in_check(pos_after, pos_after.active_color) {
+    True -> CheckSound
+    False ->
+      case m.is_castling {
+        True -> CastleSound
+        False ->
+          case board.get(pos.board, m.to) {
+            Some(_) -> CaptureSound
+            None ->
+              case m.is_en_passant {
+                True -> CaptureSound
+                False -> MoveSound
+              }
+          }
+      }
   }
 }
 

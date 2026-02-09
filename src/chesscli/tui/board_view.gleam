@@ -82,7 +82,7 @@ pub fn render(board: Board, options: RenderOptions) -> List(command.Command) {
   //   col 3:   left border "│"
   //   col 4-27: 8 squares × 3 chars
   //   col 28:  right border "│"
-  let top_row = 1
+  let top_row = 2
   let left_col = 7
   let border_col = left_col - 1
   let board_width = 8 * square_width

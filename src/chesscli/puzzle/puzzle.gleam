@@ -136,6 +136,23 @@ pub fn remove_mastered(puzzles: List(Puzzle)) -> List(Puzzle) {
   list.filter(puzzles, fn(p) { p.solve_count < 3 })
 }
 
+/// True when every puzzle in the session has a recorded result.
+pub fn is_complete(session: TrainingSession) -> Bool {
+  list.length(session.results) >= list.length(session.puzzles)
+}
+
+/// Restart a completed session: remove mastered puzzles, reshuffle,
+/// and reset to a fresh session. Returns Error if no puzzles remain.
+pub fn restart_session(
+  session: TrainingSession,
+) -> Result(TrainingSession, Nil) {
+  let remaining = remove_mastered(session.puzzles)
+  case remaining {
+    [] -> Error(Nil)
+    _ -> Ok(new_session(shuffle(remaining)))
+  }
+}
+
 /// Session statistics: (total, solved, revealed).
 pub fn stats(session: TrainingSession) -> #(Int, Int, Int) {
   let total = list.length(session.puzzles)
@@ -252,6 +269,19 @@ fn uci_to_san_list(
         }
       }
     }
+  }
+}
+
+/// Resolve a UCI string to a fully-flagged Move for a given position.
+pub fn resolve_move(pos: Position, uci: String) -> Result(Move, Nil) {
+  resolve_uci(uci, pos)
+}
+
+/// Apply a UCI move string to a position, returning the resulting position.
+pub fn apply_uci(pos: Position, uci: String) -> Result(Position, Nil) {
+  case resolve_uci(uci, pos) {
+    Ok(m) -> Ok(move.apply(pos, m))
+    Error(_) -> Error(Nil)
   }
 }
 

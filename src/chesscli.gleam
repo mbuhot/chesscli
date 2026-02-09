@@ -88,13 +88,13 @@ fn render_board(state: AppState) -> Nil {
   let white_name = option.from_result(dict.get(state.game.tags, "White"))
   let black_name = option.from_result(dict.get(state.game.tags, "Black"))
   let captures_commands =
-    captures_view.render(pos.board, state.from_white, 0, 12, 7, white_name, black_name)
+    captures_view.render(pos.board, state.from_white, 1, 13, 7, white_name, black_name, Some(pos.active_color))
   let panel_commands = case state.menu_open {
-    True -> menu_view.render(state, 34, 1, 10)
-    False -> info_panel.render(state.game, 34, 1, 10, state.analysis, state.deep_analysis_index)
+    True -> menu_view.render(state, 34, 2, 10)
+    False -> info_panel.render(state.game, 34, 2, 10, state.analysis, state.deep_analysis_index)
   }
   let eval_commands = render_eval_bar(state)
-  let status_commands = status_bar.render(state, 13)
+  let status_commands = status_bar.render(state, 14)
 
   stdout.execute(
     list.flatten([
@@ -114,6 +114,24 @@ fn render_puzzle(state: AppState) -> Nil {
     Ok(position) -> position
     Error(_) -> game.current_position(state.game)
   }
+  // Derive a display position: apply the move in Correct/Incorrect/Revealed phases
+  let display_pos = case state.puzzle_phase {
+    puzzle.Correct | puzzle.Incorrect ->
+      case state.puzzle_attempted_uci {
+        Some(uci_str) ->
+          case puzzle.apply_uci(pos, uci_str) {
+            Ok(p2) -> p2
+            Error(_) -> pos
+          }
+        None -> pos
+      }
+    puzzle.Revealed ->
+      case puzzle.apply_uci(pos, p.solution_uci) {
+        Ok(p2) -> p2
+        Error(_) -> pos
+      }
+    _ -> pos
+  }
   let #(last_from, last_to) = case state.puzzle_attempted_uci {
     option.Some(uci_str) -> parse_uci_squares(uci_str)
     option.None -> parse_uci_squares(p.preceding_move_uci)
@@ -122,36 +140,40 @@ fn render_puzzle(state: AppState) -> Nil {
     puzzle.Revealed | puzzle.Correct -> parse_uci_squares(p.solution_uci)
     _ -> #(None, None)
   }
+  let check_square = case move_gen.is_in_check(display_pos, display_pos.active_color) {
+    True -> move_gen.find_king(display_pos.board, display_pos.active_color)
+    False -> None
+  }
   let options =
     RenderOptions(
       from_white: state.from_white,
       last_move_from: last_from,
       last_move_to: last_to,
-      check_square: None,
+      check_square: check_square,
       best_move_from: best_from,
       best_move_to: best_to,
     )
-  let board_commands = board_view.render(pos.board, options)
+  let board_commands = board_view.render(display_pos.board, options)
   let white_name = option.Some(p.white_name)
   let black_name = option.Some(p.black_name)
   let name_commands =
-    captures_view.render_names(state.from_white, 0, 12, 7, white_name, black_name)
+    captures_view.render_names(state.from_white, 1, 13, 7, white_name, black_name, Some(p.player_color))
   let panel_commands = case state.menu_open {
-    True -> menu_view.render(state, 34, 1, 10)
+    True -> menu_view.render(state, 34, 2, 10)
     False ->
       puzzle_view.render(
         session,
         state.puzzle_phase,
         state.puzzle_feedback,
         pos.board,
-        34, 1, 10,
+        34, 2, 10,
       )
   }
   let eval_commands = case uci.parse_score(p.eval_before) {
-    Ok(score) -> eval_bar.render(score, 0, 2, 8)
+    Ok(score) -> eval_bar.render(score, 6, 0, 26)
     Error(_) -> []
   }
-  let status_commands = status_bar.render(state, 13)
+  let status_commands = status_bar.render(state, 14)
   stdout.execute(
     list.flatten([
       [command.Clear(terminal.All)],
@@ -182,16 +204,16 @@ fn render_explore(state: AppState) -> Nil {
     )
   let board_commands = board_view.render(pos.board, options)
   let captures_commands =
-    captures_view.render(pos.board, state.from_white, 0, 12, 7, None, None)
+    captures_view.render(pos.board, state.from_white, 1, 13, 7, None, None, Some(pos.active_color))
   let panel_commands = case state.menu_open {
-    True -> menu_view.render(state, 34, 1, 10)
-    False -> info_panel.render(state.game, 34, 1, 10, None, None)
+    True -> menu_view.render(state, 34, 2, 10)
+    False -> info_panel.render(state.game, 34, 2, 10, None, None)
   }
   let eval_commands = case state.explore_eval {
-    Some(score) -> eval_bar.render(score, 0, 2, 8)
+    Some(score) -> eval_bar.render(score, 6, 0, 26)
     None -> []
   }
-  let status_commands = status_bar.render(state, 13)
+  let status_commands = status_bar.render(state, 14)
   stdout.execute(
     list.flatten([
       [command.Clear(terminal.All)],
@@ -206,7 +228,7 @@ fn render_explore(state: AppState) -> Nil {
 
 fn render_browser(state: AppState) -> Nil {
   let browser_commands = game_browser_view.render(state)
-  let status_commands = status_bar.render(state, 13)
+  let status_commands = status_bar.render(state, 14)
   stdout.execute(
     list.flatten([
       [command.Clear(terminal.All)],
@@ -298,11 +320,55 @@ fn apply_transition_effects(
 ) -> Nil {
   case sound.determine_sound(original_state, state) {
     Some(s) -> sound.play(s)
-    None -> Nil
+    None -> puzzle_transition_sound(original_state, state)
   }
   case original_state.mode, state.mode {
     m1, m2 if m1 != m2 -> stdout.execute([command.Clear(terminal.All)])
     _, _ -> Nil
+  }
+}
+
+/// Play a sound when a puzzle move is made (attempt or reveal).
+fn puzzle_transition_sound(old: AppState, new: AppState) -> Nil {
+  case new.mode {
+    PuzzleTraining -> {
+      let puzzle_pos = case new.puzzle_session {
+        Some(session) ->
+          case puzzle.current_puzzle(session) {
+            Some(p) ->
+              case fen.parse(p.fen) {
+                Ok(pos) -> Some(#(pos, p))
+                Error(_) -> None
+              }
+            None -> None
+          }
+        None -> None
+      }
+      case puzzle_pos {
+        None -> Nil
+        Some(#(pos, p)) -> {
+          // User submitted an attempt (attempted_uci changed from None to Some)
+          case old.puzzle_attempted_uci, new.puzzle_attempted_uci {
+            None, Some(uci_str) ->
+              case puzzle.resolve_move(pos, uci_str) {
+                Ok(m) -> sound.play(sound.sound_for_move(pos, m))
+                Error(_) -> Nil
+              }
+            _, _ ->
+              // Solution revealed (phase changed to Revealed)
+              case old.puzzle_phase, new.puzzle_phase {
+                _, puzzle.Revealed if old.puzzle_phase != puzzle.Revealed ->
+                  case puzzle.resolve_move(pos, p.solution_uci) {
+                    Ok(m) -> sound.play(sound.sound_for_move(pos, m))
+                    Error(_) -> Nil
+                  }
+                _, _ -> Nil
+              }
+          }
+        }
+      }
+    }
+    _ -> Nil
   }
 }
 
@@ -460,13 +526,14 @@ fn handle_effect(
     app.SavePuzzles -> {
       case state.puzzle_session {
         Some(session) -> {
-          let updated = puzzle.remove_mastered(session.puzzles)
           let existing = case store.read_puzzles() {
             Some(cached) -> cached
             None -> []
           }
-          let merged = puzzle.merge_puzzles(updated, existing, 50)
-          store.write_puzzles(merged)
+          // Merge first so session's updated solve_counts overwrite stale
+          // cache values, then remove mastered from the merged result.
+          let merged = puzzle.merge_puzzles(session.puzzles, existing, 50)
+          store.write_puzzles(puzzle.remove_mastered(merged))
           render(state)
           loop(state, engine)
         }
@@ -711,7 +778,7 @@ fn render_eval_bar(state: AppState) -> List(command.Command) {
     Some(ga) -> {
       let idx = state.game.current_index
       case list.drop(ga.evaluations, idx) |> list.first {
-        Ok(score) -> eval_bar.render(score, 0, 2, 8)
+        Ok(score) -> eval_bar.render(score, 6, 0, 26)
         Error(_) -> []
       }
     }

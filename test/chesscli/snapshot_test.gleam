@@ -78,6 +78,7 @@ pub fn initial_board_snapshot_test() {
   let result = render_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
     7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
@@ -90,7 +91,7 @@ pub fn initial_board_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [PLAY] White | Esc: menu
+
 "
 }
 
@@ -104,6 +105,7 @@ pub fn after_e4_snapshot_test() {
   let result = render_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  >1. e4
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
     7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
@@ -116,7 +118,7 @@ pub fn after_e4_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [PLAY] Black | Esc: menu
+
 "
 }
 
@@ -129,6 +131,7 @@ pub fn input_buffer_free_play_snapshot_test() {
   let result = render_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
     7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
@@ -156,6 +159,7 @@ pub fn replay_mode_snapshot_test() {
   let result = render_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  >1. e4     e5
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   2. Nf3
     7 │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
@@ -168,7 +172,7 @@ pub fn replay_mode_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | Esc: menu
+
 "
 }
 
@@ -193,6 +197,7 @@ pub fn captures_after_exchange_snapshot_test() {
   let result = render_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐   1. e4     d5
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │  >2. exd5
     7 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
@@ -205,7 +210,7 @@ pub fn captures_after_exchange_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
        ♟ +1
-  [PLAY] Black | Esc: menu
+
 "
 }
 
@@ -239,7 +244,8 @@ pub fn long_game_replay_snapshot_test() {
   let state = AppState(..app.from_game(g), game: g)
   let result = render_long_snapshot(state)
   assert result
-    == "       player2
+    == "
+       player2
       ┌────────────────────────┐    3. Bb5   a6
     8 │ ♜     ♝  ♛     ♜  ♚    │    4. Ba4   Nf6
     7 │       ♟     ♝  ♟  ♟  ♟ │    5. O-O   Be7
@@ -252,13 +258,13 @@ pub fn long_game_replay_snapshot_test() {
       └────────────────────────┘   12. Bc2   Re8
         a  b  c  d  e  f  g  h
        player1
-  [REPLAY] White | Esc: menu
+
 "
 }
 
 fn render_long_snapshot(state: app.AppState) -> String {
   let commands = render_full_ui(state)
-  virtual_terminal.render_to_string(commands, 55, 15)
+  virtual_terminal.render_to_string(commands, 55, 16)
 }
 
 // --- Snapshot: browser username input ---
@@ -275,16 +281,12 @@ pub fn browser_username_input_snapshot_test() {
   assert result
     == "
   Chess.com username: hik█
-
-
-
-
-\n\n\n\n\n\n
+\n\n\n\n\n\n\n\n\n\n\n
   [BROWSE] Enter username | Esc:back
 "
 }
 
-// --- Snapshot: replay with analysis shows eval bar and eval in status ---
+// --- Snapshot: replay with analysis shows eval bar ---
 
 pub fn replay_with_analysis_snapshot_test() {
   let assert Ok(pgn_game) = pgn.parse("1. e4 e5 2. Nf3")
@@ -303,20 +305,21 @@ pub fn replay_with_analysis_snapshot_test() {
   let state = AppState(..app.from_game(g), game: g, analysis: Some(ga))
   let result = render_snapshot(state)
   assert result
-    == "
+    == "                +0.20
+
       ┌────────────────────────┐  >1. e4     e5
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   2. Nf3
     7 │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
     6 │                        │
     5 │             ♟          │
-+0  4 │             ♟          │
+    4 │             ♟          │
     3 │                        │
     2 │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
     1 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | +0.20 | Esc: menu
+
 "
 }
 
@@ -333,6 +336,7 @@ pub fn deep_analysis_white_move_fish_snapshot_test() {
   // Fish appears in padding between white and black moves, replacing 2 spaces
   assert result
     == "
+
       ┌────────────────────────┐  >1. e4   🐟e5
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   2. Nf3
     7 │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
@@ -345,7 +349,7 @@ pub fn deep_analysis_white_move_fish_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | Esc: menu
+
 "
 }
 
@@ -360,6 +364,7 @@ pub fn deep_analysis_black_move_fish_snapshot_test() {
   // Fish appears after the black move text
   assert result
     == "
+
       ┌────────────────────────┐  >1. e4     e5🐟
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   2. Nf3
     7 │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
@@ -372,7 +377,7 @@ pub fn deep_analysis_black_move_fish_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | Esc: menu
+
 "
 }
 
@@ -404,6 +409,7 @@ pub fn puzzle_solving_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
@@ -416,7 +422,7 @@ pub fn puzzle_solving_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -427,6 +433,7 @@ pub fn puzzle_input_buffer_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
@@ -451,6 +458,7 @@ pub fn puzzle_hint_piece_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
@@ -463,7 +471,7 @@ pub fn puzzle_hint_piece_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -481,6 +489,7 @@ pub fn puzzle_incorrect_then_hint_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
@@ -493,7 +502,7 @@ pub fn puzzle_incorrect_then_hint_snapshot_test() {
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -505,19 +514,20 @@ pub fn puzzle_revealed_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │  Best: d5 (eval +0.2)
     4 │          ♟             │  You played: e5 (eval +1.7)
-    5 │                        │  1...d5 2. exd5 Qxd5
+    5 │             ♟          │  1...d5 2. exd5 Qxd5
     6 │                        │
-    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    7 │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
     8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -529,19 +539,20 @@ pub fn puzzle_correct_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │  Correct! d5
     4 │          ♟             │
-    5 │                        │
+    5 │             ♟          │
     6 │                        │
-    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    7 │ ♟  ♟  ♟  ♟     ♟  ♟  ♟ │
     8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -552,9 +563,10 @@ pub fn menu_overlay_snapshot_test() {
   let #(state, _) = app.update(state, event.Esc)
   assert state.menu_open == True
   let commands = render_full_ui(state)
-  let result = virtual_terminal.render_to_string(commands, 65, 15)
+  let result = virtual_terminal.render_to_string(commands, 65, 16)
   assert result
     == "
+
       ┌────────────────────────┐  Commands          Esc: close
     8 │ ♜  ♞  ♝  ♛  ♚  ♝  ♞  ♜ │   [f] Flip board
     7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │   [a] Analyze game
@@ -567,7 +579,7 @@ pub fn menu_overlay_snapshot_test() {
       └────────────────────────┘
         a  b  c  d  e  f  g  h
 
-  [REPLAY] White | Esc: menu
+
 "
 }
 
@@ -587,19 +599,20 @@ pub fn puzzle_incorrect_good_move_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │  e5 is good, but not the best move.
     4 │          ♟             │
-    5 │                        │
+    5 │          ♟             │
     6 │                        │
-    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    7 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
     8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -609,19 +622,20 @@ pub fn puzzle_incorrect_inaccuracy_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │  e5 is an inaccuracy.
     4 │          ♟             │
-    5 │                        │
+    5 │          ♟             │
     6 │                        │
-    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    7 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
     8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -631,19 +645,20 @@ pub fn puzzle_incorrect_mistake_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │  e5 is a mistake.
     4 │          ♟             │
-    5 │                        │
+    5 │          ♟             │
     6 │                        │
-    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    7 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
     8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -653,19 +668,20 @@ pub fn puzzle_incorrect_blunder_snapshot_test() {
   let result = render_puzzle_snapshot(state)
   assert result
     == "
+
       ┌────────────────────────┐  Puzzle 1/1  Mistake
     1 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │  Find the best move for Black
     2 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │  Solved: 0/3
     3 │                        │  e5 is a blunder!
     4 │          ♟             │
-    5 │                        │
+    5 │          ♟             │
     6 │                        │
-    7 │ ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟ │
+    7 │ ♟  ♟  ♟     ♟  ♟  ♟  ♟ │
     8 │ ♜  ♞  ♝  ♚  ♛  ♝  ♞  ♜ │
       └────────────────────────┘
         h  g  f  e  d  c  b  a
 
-  Black | Esc: menu
+
 "
 }
 
@@ -685,6 +701,38 @@ pub fn puzzle_end_of_puzzles_idempotent_snapshot_test() {
   assert string.contains(result2, "Done! 1/1 solved, 0 revealed")
 }
 
+pub fn puzzle_done_menu_shows_again_test() {
+  let state = puzzle_snapshot_state()
+  // Solve and advance to Done
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  let #(state, _) = app.update(state, event.Enter)
+  // Open menu
+  let #(state, _) = app.update(state, event.Esc)
+  assert state.menu_open == True
+  let result = render_puzzle_snapshot(state)
+  assert string.contains(result, "[a] Again")
+}
+
+pub fn puzzle_restart_returns_to_solving_test() {
+  let state = puzzle_snapshot_state()
+  // Solve and advance to Done
+  let #(state, _) = app.update(state, event.Char("d"))
+  let #(state, _) = app.update(state, event.Char("5"))
+  let #(state, _) = app.update(state, event.Enter)
+  let #(state, _) = app.update(state, event.Enter)
+  // Open menu and press 'a' to restart
+  let #(state, _) = app.update(state, event.Esc)
+  let #(state, _) = app.update(state, event.Char("a"))
+  // Should be back in Solving mode
+  assert state.puzzle_feedback == ""
+  assert state.menu_open == False
+  let assert Some(session) = state.puzzle_session
+  assert session.current_index == 0
+  assert session.results == []
+}
+
 // --- Helpers ---
 
 fn sample_game() -> game.Game {
@@ -694,19 +742,19 @@ fn sample_game() -> game.Game {
 
 fn render_snapshot(state: app.AppState) -> String {
   let commands = render_full_ui(state)
-  virtual_terminal.render_to_string(commands, 50, 15)
+  virtual_terminal.render_to_string(commands, 50, 16)
 }
 
 fn render_puzzle_snapshot(state: app.AppState) -> String {
   let commands = render_full_ui(state)
-  virtual_terminal.render_to_string(commands, 70, 15)
+  virtual_terminal.render_to_string(commands, 70, 16)
 }
 
 fn render_full_ui(state: AppState) -> List(command.Command) {
   case state.mode {
     GameBrowser -> {
       let browser_commands = game_browser_view.render(state)
-      let status_commands = status_bar.render(state, 13)
+      let status_commands = status_bar.render(state, 14)
       list.flatten([browser_commands, status_commands])
     }
     PuzzleTraining -> {
@@ -716,6 +764,23 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
         Ok(position) -> position
         Error(_) -> game.current_position(state.game)
       }
+      let display_pos = case state.puzzle_phase {
+        puzzle.Correct | puzzle.Incorrect ->
+          case state.puzzle_attempted_uci {
+            Some(uci_str) ->
+              case puzzle.apply_uci(pos, uci_str) {
+                Ok(p2) -> p2
+                Error(_) -> pos
+              }
+            None -> pos
+          }
+        puzzle.Revealed ->
+          case puzzle.apply_uci(pos, p.solution_uci) {
+            Ok(p2) -> p2
+            Error(_) -> pos
+          }
+        _ -> pos
+      }
       let #(last_from, last_to) = case state.puzzle_attempted_uci {
         Some(uci_str) -> parse_uci_squares(uci_str)
         None -> parse_uci_squares(p.preceding_move_uci)
@@ -724,28 +789,32 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
         puzzle.Revealed | puzzle.Correct -> parse_uci_squares(p.solution_uci)
         _ -> #(None, None)
       }
+      let check_square = case move_gen.is_in_check(display_pos, display_pos.active_color) {
+        True -> move_gen.find_king(display_pos.board, display_pos.active_color)
+        False -> None
+      }
       let options =
         RenderOptions(
           from_white: state.from_white,
           last_move_from: last_from,
           last_move_to: last_to,
-          check_square: None,
+          check_square: check_square,
           best_move_from: best_from,
           best_move_to: best_to,
         )
-      let board_commands = board_view.render(pos.board, options)
+      let board_commands = board_view.render(display_pos.board, options)
       let panel_commands = case state.menu_open {
-        True -> menu_view.render(state, 34, 1, 10)
+        True -> menu_view.render(state, 34, 2, 10)
         False ->
           puzzle_view.render(
             session,
             state.puzzle_phase,
             state.puzzle_feedback,
             pos.board,
-            34, 1, 10,
+            34, 2, 10,
           )
       }
-      let status_commands = status_bar.render(state, 13)
+      let status_commands = status_bar.render(state, 14)
       list.flatten([board_commands, panel_commands, status_commands])
     }
     _ -> {
@@ -770,13 +839,13 @@ fn render_full_ui(state: AppState) -> List(command.Command) {
       let white_name = option.from_result(dict.get(state.game.tags, "White"))
       let black_name = option.from_result(dict.get(state.game.tags, "Black"))
       let captures_commands =
-        captures_view.render(pos.board, state.from_white, 0, 12, 7, white_name, black_name)
+        captures_view.render(pos.board, state.from_white, 1, 13, 7, white_name, black_name, Some(pos.active_color))
       let panel_commands = case state.menu_open {
-        True -> menu_view.render(state, 34, 1, 10)
-        False -> info_panel.render(state.game, 34, 1, 10, state.analysis, state.deep_analysis_index)
+        True -> menu_view.render(state, 34, 2, 10)
+        False -> info_panel.render(state.game, 34, 2, 10, state.analysis, state.deep_analysis_index)
       }
       let eval_commands = render_eval_bar(state)
-      let status_commands = status_bar.render(state, 13)
+      let status_commands = status_bar.render(state, 14)
       list.flatten([
         board_commands,
         captures_commands,
@@ -814,7 +883,7 @@ fn render_eval_bar(state: AppState) -> List(command.Command) {
     Some(ga) -> {
       let idx = state.game.current_index
       case list.drop(ga.evaluations, idx) |> list.first {
-        Ok(score) -> eval_bar.render(score, 0, 2, 8)
+        Ok(score) -> eval_bar.render(score, 6, 0, 26)
         Error(_) -> []
       }
     }

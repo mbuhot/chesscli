@@ -15,8 +15,7 @@ pub fn format_status_replay_mode_test() {
   let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
   let state = app.from_game(game.from_pgn(pgn_game))
   let status = status_bar.format_status(state)
-  assert string.contains(status, "[REPLAY]") == True
-  assert string.contains(status, "White") == True
+  assert status == ""
 }
 
 pub fn format_status_replay_after_move_test() {
@@ -25,15 +24,13 @@ pub fn format_status_replay_after_move_test() {
   let assert Ok(g) = game.forward(g)
   let state = AppState(..app.from_game(g), game: g)
   let status = status_bar.format_status(state)
-  assert string.contains(status, "Black") == True
+  assert status == ""
 }
 
 pub fn format_status_free_play_mode_test() {
   let state = app.new()
   let status = status_bar.format_status(state)
-  assert string.contains(status, "[PLAY]") == True
-  assert string.contains(status, "White") == True
-  assert string.contains(status, "Esc: menu") == True
+  assert status == ""
 }
 
 pub fn format_status_with_input_buffer_test() {
@@ -42,10 +39,10 @@ pub fn format_status_with_input_buffer_test() {
   assert string.contains(status, "> Nf") == True
 }
 
-pub fn format_status_empty_buffer_shows_mode_test() {
+pub fn format_status_empty_buffer_shows_empty_test() {
   let state = app.new()
   let status = status_bar.format_status(state)
-  assert string.contains(status, "[PLAY]") == True
+  assert status == ""
 }
 
 // --- format_error ---
@@ -94,15 +91,14 @@ pub fn format_status_browser_archive_list_test() {
 
 // --- Analysis status ---
 
-pub fn format_status_replay_without_analysis_shows_esc_menu_test() {
+pub fn format_status_replay_without_analysis_empty_test() {
   let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
   let state = app.from_game(game.from_pgn(pgn_game))
   let status = status_bar.format_status(state)
-  assert string.contains(status, "[REPLAY]") == True
-  assert string.contains(status, "Esc: menu") == True
+  assert status == ""
 }
 
-pub fn format_status_replay_with_analysis_shows_eval_test() {
+pub fn format_status_replay_with_analysis_empty_test() {
   let assert Ok(pgn_game) = pgn.parse("1. e4 e5")
   let state = app.from_game(game.from_pgn(pgn_game))
   let ga =
@@ -112,8 +108,7 @@ pub fn format_status_replay_with_analysis_shows_eval_test() {
     )
   let state = AppState(..state, analysis: option.Some(ga))
   let status = status_bar.format_status(state)
-  assert string.contains(status, "[REPLAY]") == True
-  assert string.contains(status, "0.00") == True
+  assert status == ""
 }
 
 pub fn format_status_during_analysis_shows_progress_test() {
@@ -151,20 +146,14 @@ fn puzzle_status_state() -> app.AppState {
   app.enter_puzzle_mode(app.from_game(game.new()), session)
 }
 
-pub fn format_status_puzzle_mode_shows_esc_menu_test() {
+pub fn format_status_puzzle_mode_empty_test() {
   let state = puzzle_status_state()
   let status = status_bar.format_status(state)
-  assert string.contains(status, "Esc: menu") == True
+  assert status == ""
 }
 
-pub fn format_status_puzzle_mode_shows_color_test() {
-  let state = puzzle_status_state()
-  let status = status_bar.format_status(state)
-  assert string.contains(status, "White") == True
-}
-
-pub fn format_status_puzzle_no_session_test() {
+pub fn format_status_puzzle_no_session_empty_test() {
   let state = AppState(..app.new(), mode: app.PuzzleTraining)
   let status = status_bar.format_status(state)
-  assert status == "Esc: menu"
+  assert status == ""
 }

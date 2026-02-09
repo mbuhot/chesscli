@@ -173,3 +173,61 @@ pub fn find_puzzles_filters_white_only_test() {
   assert p1.player_color == White
   assert p2.player_color == White
 }
+
+// --- Lost position filtering ---
+
+pub fn find_puzzles_excludes_lost_position_for_black_test() {
+  // Black's mistake at +4.61 — Black is losing by 4.61 pawns, excluded
+  let g = sample_game()
+  let ga =
+    GameAnalysis(evaluations: [], move_analyses: [
+      MoveAnalysis(0, Centipawns(0), Centipawns(20), "e2e4", [], Best),
+      MoveAnalysis(1, Centipawns(461), Centipawns(469), "d7d5", [], Mistake),
+      MoveAnalysis(2, Centipawns(469), Centipawns(470), "g1f3", [], Best),
+      MoveAnalysis(3, Centipawns(470), Centipawns(480), "b8c6", [], Best),
+    ])
+  let puzzles = detector.find_puzzles(ga, g, option.None)
+  assert puzzles == []
+}
+
+pub fn find_puzzles_excludes_lost_position_for_white_test() {
+  // White's mistake at -4.00 — White is losing by 4.0 pawns, excluded
+  let g = sample_game()
+  let ga =
+    GameAnalysis(evaluations: [], move_analyses: [
+      MoveAnalysis(0, Centipawns(-400), Centipawns(-500), "d2d4", [], Blunder),
+      MoveAnalysis(1, Centipawns(-500), Centipawns(-490), "e7e5", [], Best),
+      MoveAnalysis(2, Centipawns(-490), Centipawns(-480), "g1f3", [], Best),
+      MoveAnalysis(3, Centipawns(-480), Centipawns(-470), "b8c6", [], Best),
+    ])
+  let puzzles = detector.find_puzzles(ga, g, option.None)
+  assert puzzles == []
+}
+
+pub fn find_puzzles_keeps_competitive_mistake_test() {
+  // Black's mistake at +1.50 — Black is losing by 1.5 pawns, still competitive
+  let g = sample_game()
+  let ga =
+    GameAnalysis(evaluations: [], move_analyses: [
+      MoveAnalysis(0, Centipawns(0), Centipawns(20), "e2e4", [], Best),
+      MoveAnalysis(1, Centipawns(150), Centipawns(300), "d7d5", [], Mistake),
+      MoveAnalysis(2, Centipawns(300), Centipawns(310), "g1f3", [], Best),
+      MoveAnalysis(3, Centipawns(310), Centipawns(320), "b8c6", [], Best),
+    ])
+  let puzzles = detector.find_puzzles(ga, g, option.None)
+  assert list.length(puzzles) == 1
+}
+
+pub fn find_puzzles_keeps_mistake_at_threshold_test() {
+  // Black's mistake at exactly +3.00 — mover_eval = -3.0, right at threshold
+  let g = sample_game()
+  let ga =
+    GameAnalysis(evaluations: [], move_analyses: [
+      MoveAnalysis(0, Centipawns(0), Centipawns(20), "e2e4", [], Best),
+      MoveAnalysis(1, Centipawns(300), Centipawns(450), "d7d5", [], Mistake),
+      MoveAnalysis(2, Centipawns(450), Centipawns(460), "g1f3", [], Best),
+      MoveAnalysis(3, Centipawns(460), Centipawns(470), "b8c6", [], Best),
+    ])
+  let puzzles = detector.find_puzzles(ga, g, option.None)
+  assert list.length(puzzles) == 1
+}

@@ -194,6 +194,10 @@ fn menu_items_free_play() -> List(MenuItem) {
 }
 
 fn menu_items_puzzle(state: AppState) -> List(MenuItem) {
+  let session_complete = case state.puzzle_session {
+    option.Some(s) -> puzzle.is_complete(s)
+    option.None -> False
+  }
   case state.puzzle_phase {
     puzzle.Solving | puzzle.HintPiece | puzzle.HintSquare -> [
       MenuItem("h", "Hint"),
@@ -208,10 +212,25 @@ fn menu_items_puzzle(state: AppState) -> List(MenuItem) {
       MenuItem("f", "Flip board"),
       MenuItem("q", "Back to game"),
     ]
+    puzzle.Correct if session_complete -> [
+      MenuItem("a", "Again"),
+      MenuItem("N", "Previous puzzle"),
+      MenuItem("r", "View full line"),
+      MenuItem("e", "Explore position"),
+      MenuItem("f", "Flip board"),
+      MenuItem("q", "Back to game"),
+    ]
     puzzle.Correct -> [
       MenuItem("n", "Next puzzle"),
       MenuItem("N", "Previous puzzle"),
       MenuItem("r", "View full line"),
+      MenuItem("e", "Explore position"),
+      MenuItem("f", "Flip board"),
+      MenuItem("q", "Back to game"),
+    ]
+    puzzle.Revealed if session_complete -> [
+      MenuItem("a", "Again"),
+      MenuItem("N", "Previous puzzle"),
       MenuItem("e", "Explore position"),
       MenuItem("f", "Flip board"),
       MenuItem("q", "Back to game"),
@@ -346,6 +365,7 @@ fn dispatch_puzzle_command(
         _ -> #(state, None)
       }
     "n" -> advance_puzzle(state, session)
+    "a" -> restart_puzzles(state, session)
     "e" -> enter_puzzle_explore(state, session)
     "N" ->
       case puzzle.prev_puzzle(session) {
@@ -726,6 +746,35 @@ fn advance_puzzle(
         SavePuzzles,
       )
     }
+  }
+}
+
+fn restart_puzzles(
+  state: AppState,
+  session: TrainingSession,
+) -> #(AppState, Effect) {
+  case puzzle.restart_session(session) {
+    Ok(new_session) -> #(
+      AppState(
+        ..state,
+        puzzle_session: option.Some(new_session),
+        puzzle_phase: puzzle.Solving,
+        puzzle_feedback: "",
+        puzzle_hint_used: False,
+        puzzle_attempted_uci: option.None,
+        input_buffer: "",
+        input_error: "",
+        from_white: puzzle_perspective(new_session),
+      ),
+      SavePuzzles,
+    )
+    Error(_) -> #(
+      AppState(
+        ..state,
+        input_error: "All puzzles mastered!",
+      ),
+      SavePuzzles,
+    )
   }
 }
 

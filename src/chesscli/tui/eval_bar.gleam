@@ -1,4 +1,4 @@
-//// Vertical eval bar rendered left of the board showing white/black advantage.
+//// Horizontal eval bar rendered below the board showing white/black advantage.
 //// Uses a sigmoid mapping to convert score to a visual fill ratio.
 
 import chesscli/engine/uci.{type Score, Centipawns, Mate}
@@ -7,9 +7,7 @@ import etch/style
 import gleam/float
 import gleam/int
 import gleam/list
-
-/// Eval bar width in characters.
-const bar_width = 2
+import gleam/string
 
 /// White fill color.
 const white_bg = style.Rgb(240, 240, 240)
@@ -36,28 +34,24 @@ pub fn score_to_white_ratio(score: Score) -> Float {
   1.0 /. { 1.0 +. exp }
 }
 
-/// Render a vertical eval bar as etch commands.
-/// White fill grows from the bottom; dark fill from the top.
+/// Render a horizontal eval bar as etch commands.
+/// White fills from the left, dark from the right. Score label centered.
 pub fn render(
   score: Score,
-  col: Int,
-  start_row: Int,
-  height: Int,
+  start_col: Int,
+  row: Int,
+  width: Int,
 ) -> List(command.Command) {
   let ratio = score_to_white_ratio(score)
-  let white_rows = float.round(ratio *. int.to_float(height))
-  let white_rows = int.clamp(white_rows, 0, height)
-  let label = uci.format_score(score)
+  let white_cols = float.round(ratio *. int.to_float(width))
+  let white_cols = int.clamp(white_cols, 0, width)
+  let label = pad_center(uci.format_score(score), width)
 
-  // Label goes in the middle of the bar
-  let label_row = start_row + height / 2
-
-  list.range(0, height - 1)
+  // Render each column with the appropriate background color
+  list.range(0, width - 1)
   |> list.flat_map(fn(i) {
-    let row = start_row + i
-    // Rows are top-to-bottom: top rows are dark (black advantage), bottom rows are white
-    let dark_rows = height - white_rows
-    let is_white = i >= dark_rows
+    let col = start_col + i
+    let is_white = i < white_cols
     let bg = case is_white {
       True -> white_bg
       False -> dark_bg
@@ -66,24 +60,21 @@ pub fn render(
       True -> label_on_white_fg
       False -> label_on_dark_fg
     }
-    let text = case row == label_row {
-      True -> pad_center(label, bar_width)
-      False -> string_repeat(" ", bar_width)
-    }
+    let ch = string.slice(label, i, 1)
     [
       command.MoveTo(col, row),
       command.SetBackgroundColor(bg),
       command.SetForegroundColor(fg),
-      command.Print(text),
+      command.Print(ch),
       command.ResetStyle,
     ]
   })
 }
 
 fn pad_center(text: String, width: Int) -> String {
-  let len = string_length(text)
+  let len = string.length(text)
   case len >= width {
-    True -> string_take(text, width)
+    True -> string.slice(text, 0, width)
     False -> {
       let pad = width - len
       let left = pad / 2
@@ -91,16 +82,6 @@ fn pad_center(text: String, width: Int) -> String {
       string_repeat(" ", left) <> text <> string_repeat(" ", right)
     }
   }
-}
-
-import gleam/string
-
-fn string_length(s: String) -> Int {
-  string.length(s)
-}
-
-fn string_take(s: String, n: Int) -> String {
-  string.slice(s, 0, n)
 }
 
 fn string_repeat(s: String, n: Int) -> String {

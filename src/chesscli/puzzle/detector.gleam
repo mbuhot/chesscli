@@ -14,7 +14,12 @@ import gleam/dict
 import gleam/list
 import gleam/option.{type Option}
 
+/// Positions where the mover is already losing by more than this many pawns
+/// are excluded — practicing accuracy in hopeless positions isn't productive.
+const lost_position_threshold = -3.0
+
 /// Extract puzzles from Miss, Mistake, and Blunder positions in a game.
+/// Skips positions where the mover was already losing badly before the move.
 /// When a player color is given, only returns puzzles for that color.
 pub fn find_puzzles(
   ga: GameAnalysis,
@@ -30,12 +35,24 @@ pub fn find_puzzles(
       option.None -> True
     }
   })
+  |> list.filter(is_competitive_position)
 }
 
 fn is_puzzle_worthy(ma: MoveAnalysis) -> Bool {
   case ma.classification {
     Miss | Mistake | Blunder -> True
     _ -> False
+  }
+}
+
+/// Reject positions where the mover was already losing badly.
+fn is_competitive_position(puzzle: Puzzle) -> Bool {
+  case uci.parse_score(puzzle.eval_before) {
+    Ok(score) -> {
+      let mover_eval = analysis.mover_eval_before(score, puzzle.player_color)
+      mover_eval >=. lost_position_threshold
+    }
+    Error(_) -> True
   }
 }
 
