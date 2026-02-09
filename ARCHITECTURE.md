@@ -127,25 +127,56 @@ Stockfish analysis is incremental: the event loop polls for results between key 
 | `engine/stockfish_ffi.mjs` | Bun.spawn Stockfish process, UCI stdin/stdout communication |
 | `puzzle/store_ffi.mjs` | Read/write puzzle JSON to ~/.chesscli/puzzles.json |
 | `puzzle/puzzle_ffi.mjs` | Fisher-Yates shuffle for puzzle ordering |
-| `tui/sound_ffi.mjs` | Spawn afplay for move sounds |
+| `tui/sound_ffi.mjs` | Spawn afplay for move sounds (embedded in binary, cwd/priv in dev) |
 | `tui/eval_bar_ffi.mjs` | Math.exp for sigmoid mapping |
 | `tui/tui_ffi.mjs` | process.exit and async sleep |
 | `config_ffi.mjs` | Read/write username to ~/.chesscli.json |
 
 ## Testing
 
-26 test files, 530 tests. Key patterns:
+26 test files, 543 tests. Key patterns:
 - `assert expr == expected` syntax (not gleeunit/should)
 - `let assert Ok(...)` for Result unwrapping
 - Snapshot tests via `virtual_terminal.render_to_string` for deterministic UI verification
 - No Stockfish or network calls in tests — all pure state machine and rendering tests
 
-## Build
+## Build Pipeline
 
-```sh
-gleam run --target javascript     # Run
-gleam test --target javascript    # Test
-gleam build --target javascript   # Build only
+```
+gleam build --target javascript
+  → build/dev/javascript/chesscli/chesscli.mjs   (entry point, exports main())
+  → build/dev/javascript/chesscli/**/*.mjs        (app modules + FFI)
+  → build/dev/javascript/{gleam_stdlib,etch,...}/  (dependency modules)
+  → build/dev/javascript/prelude.mjs              (Gleam runtime)
 ```
 
-Requires Stockfish for analysis features: `brew install stockfish`
+### Development
+
+```sh
+gleam run --target javascript     # Run (Bun executes compiled JS directly)
+gleam test --target javascript    # Test
+```
+
+### Standalone Binary
+
+`make` produces a ~57MB self-contained binary via `bun build --compile --bytecode`. The Makefile runs `gleam build` then bundles all modules, the Gleam runtime, and embedded assets into a single executable.
+
+`bundle_entry.mjs` is the bundler entry point. It embeds MP3 sound files using Bun's `import ... with { type: "file" }` syntax, extracts them to a temp directory at startup (Bun's virtual `$bunfs` paths aren't accessible to external processes like `afplay`), sets `globalThis.__chesscli_sounds`, then imports and calls `main()`.
+
+`sound_ffi.mjs` checks `globalThis.__chesscli_sounds` first (set by bundle entry in compiled mode), falling back to `cwd/priv/sound/lisp/` for development mode.
+
+```sh
+make                # Build to ./bin/chesscli
+make install        # Build and copy to ~/.local/bin
+make test           # Run tests
+make clean          # Remove build artifacts
+```
+
+### Cross-Platform
+
+Bun supports cross-compilation: `--target=bun-darwin-arm64`, `bun-darwin-x64`, `bun-linux-x64`, `bun-linux-arm64`. Terminal raw mode (etch) works on macOS and Linux. Windows is not supported.
+
+### External Dependencies
+
+- **Stockfish** — must be on PATH (`brew install stockfish` on macOS). Spawned as subprocess, not embedded (~100MB, platform-specific).
+- **afplay** (macOS) — for move sounds. Ships with macOS, silently skipped if unavailable.
