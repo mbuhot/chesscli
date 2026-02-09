@@ -91,6 +91,7 @@ pub type AppState {
     explore_eval: Option(uci.Score),
     explore_best_move: Option(String),
     explore_show_best: Bool,
+    explore_saved_game: Option(Game),
   )
 }
 
@@ -135,6 +136,7 @@ pub fn new() -> AppState {
     explore_eval: option.None,
     explore_best_move: option.None,
     explore_show_best: False,
+    explore_saved_game: option.None,
   )
 }
 
@@ -160,6 +162,7 @@ pub fn from_game(g: Game) -> AppState {
     explore_eval: option.None,
     explore_best_move: option.None,
     explore_show_best: False,
+    explore_saved_game: option.None,
   )
 }
 
@@ -574,6 +577,7 @@ fn enter_puzzle_explore(
           explore_eval: option.None,
           explore_best_move: option.None,
           explore_show_best: False,
+          explore_saved_game: option.Some(state.game),
         ),
         EvaluateExplorePosition,
       )
@@ -583,13 +587,16 @@ fn enter_puzzle_explore(
 }
 
 fn return_to_puzzle(state: AppState) -> #(AppState, Effect) {
+  let game = option.unwrap(state.explore_saved_game, state.game)
   #(
     AppState(
       ..state,
       mode: PuzzleTraining,
+      game: game,
       input_buffer: "",
       input_error: "",
       explore_eval: option.None,
+      explore_saved_game: option.None,
     ),
     Render,
   )
@@ -982,15 +989,18 @@ fn new_game(state: AppState) -> #(AppState, Effect) {
 }
 
 fn exit_puzzle_mode(state: AppState) -> #(AppState, Effect) {
+  let game = option.unwrap(state.explore_saved_game, state.game)
   #(
     AppState(
       ..state,
       mode: GameReplay,
+      game: game,
       puzzle_session: option.None,
       puzzle_phase: puzzle.Solving,
       puzzle_feedback: "",
       input_buffer: "",
       input_error: "",
+      explore_saved_game: option.None,
     ),
     Render,
   )

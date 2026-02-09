@@ -1578,6 +1578,27 @@ pub fn puzzle_explore_quit_exits_to_game_replay_test() {
   assert effect == Render
 }
 
+pub fn puzzle_explore_quit_restores_original_game_test() {
+  let original_game = sample_game()
+  let state = explore_state_from_correct()
+  // Explore mode replaces state.game with puzzle position
+  assert state.game.moves == []
+  // Exiting should restore the original game with its move history
+  let #(state, _) = menu_command(state, "q")
+  assert state.mode == GameReplay
+  assert list.length(state.game.moves) == list.length(original_game.moves)
+}
+
+pub fn puzzle_explore_back_restores_original_game_test() {
+  let original_game = sample_game()
+  let state = explore_state_from_correct()
+  assert state.game.moves == []
+  // Going back to puzzle should restore the original game
+  let #(state, _) = menu_command(state, "b")
+  assert state.mode == PuzzleTraining
+  assert list.length(state.game.moves) == list.length(original_game.moves)
+}
+
 pub fn on_explore_eval_result_stores_score_test() {
   let state = explore_state_from_correct()
   let #(state, effect) =
